@@ -3888,8 +3888,9 @@ void panthor_sched_unplug(struct panthor_device *ptdev)
 {
 	struct panthor_scheduler *sched = ptdev->scheduler;
 
-	cancel_delayed_work_sync(&sched->tick_work);
+	disable_delayed_work_sync(&sched->tick_work);
 	disable_work_sync(&sched->fw_events_work);
+	disable_work_sync(&sched->sync_upd_work);
 
 	mutex_lock(&sched->lock);
 	if (sched->pm.has_ref) {
@@ -3906,8 +3907,6 @@ static void panthor_sched_fini(struct drm_device *ddev, void *res)
 
 	if (!sched || !sched->csg_slot_count)
 		return;
-
-	cancel_delayed_work_sync(&sched->tick_work);
 
 	if (sched->wq)
 		destroy_workqueue(sched->wq);
