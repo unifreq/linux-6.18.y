@@ -26232,6 +26232,23 @@ rtl8168_setup_mqs_reg(struct rtl8168_private *tp)
         tp->imr_reg[3] = IntrMask3;
 }
 
+static int
+rtl8168_devname_configuration(struct rtl8168_private *tp)
+{
+        const char *devname;
+        int ret;
+
+        ret = of_property_read_string(tp->pci_dev->dev.of_node,
+                                      "label", &devname);
+
+        if (ret)
+                return ret;
+
+        strscpy(tp->dev->name, devname, IFNAMSIZ);
+
+        return 0;
+}
+
 static void
 rtl8168_led_configuration(struct rtl8168_private *tp)
 {
@@ -26963,6 +26980,8 @@ err1:
         tp->RxDescLength = RX_DESC_LEN_TYPE_1;
         if (tp->InitRxDescType == RX_DESC_RING_TYPE_2)
                 tp->RxDescLength = RX_DESC_LEN_TYPE_2;
+
+	rtl8168_devname_configuration(tp);
 
         rtl8168_led_configuration(tp);
         tp->NicCustLedValue = RTL_R16(tp, CustomLED);
