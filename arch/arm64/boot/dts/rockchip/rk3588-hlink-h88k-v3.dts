@@ -1,0 +1,69 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+// Copyright (c) 2023 Flippy <flippy@sina.com>
+
+/dts-v1/;
+
+#include "rk3588-hlink.dtsi"
+
+/ {
+	model = "Hlink H88K-V3";
+	compatible = "hlink,h88k", "rockchip,rk3588";
+};
+
+&combphy0_ps {
+	status = "okay";
+};
+
+&gmac0 {
+	phy-mode = "rgmii";
+	tx_delay = <0x42>;
+	rx_delay = <0x34>;
+};
+
+/*
+ * RTL8125B 2.5g ethernet
+ * phy is combphy0_ps
+ */
+&pcie2x1l2 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pcie2_2_rst>;	
+	reset-gpios = <&gpio4 RK_PA5 GPIO_ACTIVE_HIGH>;
+	status = "okay";
+
+	pcie@0,0 {
+		reg = <0x00400000 0 0 0 0>;
+		#address-cells = <3>;
+		#size-cells = <2>;
+
+		bus-range = <0x40 0x4f>;
+		device_type = "pci";
+		ranges;
+
+		rtl8125_2: pcie-eth@0,0 {
+			compatible = "pci10ec,8125";
+			label = "eth2";
+			reg = <0x410000 0 0 0 0>;
+
+			/* G+ 3v3
+			 * G- LED3: LINK on 100 + 1000 + 2500
+			 * Y+ 3v3
+			 * Y- LED2: ACT on all speed
+			 */
+			r8125,led2 = <0x0200>;
+			r8125,led3 = <0x002a>;
+		};
+	};
+};
+
+&pinctrl {
+	pcie2 {
+		pcie2_2_rst: pcie2-2-rst {
+			rockchip,pins = <4 RK_PA5 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+};
+
+&sdmmc {
+	max-frequency = <200000000>;
+	sd-uhs-sdr104;
+};

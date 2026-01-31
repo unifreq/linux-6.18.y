@@ -1,0 +1,96 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * Copyright (c) 2024 Radxa Computer (Shenzhen) Co., Ltd.
+ */
+
+/dts-v1/;
+
+#include "rk3588s-radxa-e54c.dts"
+
+/ {
+	/delete-node/ switch0;
+};
+
+&gmac1 {
+	/delete-property/ snps,tso;
+	label = "eth0";
+	tx_delay = <0x0>;
+	rx_delay = <0x0>;
+};
+
+&mdio1 {
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	switch0: switch0@29 {
+		compatible = "realtek,rtl8365mb";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		reg = <29>;
+
+		mdio_phys: mdio {
+			compatible = "realtek,smi-mdio";
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			mdio_phy0: mdio-phy@0 {
+				reg = <0>;
+			};
+
+			mdio_phy1: mdio-phy@1 {
+				reg = <1>;
+			};
+
+			mdio_phy2: mdio-phy@2 {
+				reg = <2>;
+			};
+
+			mdio_phy3: mdio-phy@3 {
+				reg = <3>;
+			};
+		};
+
+		mdio_ports: ports {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			port0: port@0 {
+				reg = <0>;
+				label = "eth0p0";
+				phy-handle = <&mdio_phy0>;
+			};
+
+			port1: port@1 {
+				reg = <1>;
+				label = "eth0p1";
+				phy-handle = <&mdio_phy1>;
+			};
+
+			port2: port@2 {
+				reg = <2>;
+				label = "eth0p2";
+				phy-handle = <&mdio_phy2>;
+			};
+
+			port3: port@3 {
+				reg = <3>;
+				label = "eth0p3";
+				phy-handle = <&mdio_phy3>;
+			};
+
+			port6: port@6 {
+				reg = <6>;
+				label = "cpu";
+				ethernet = <&gmac1>;
+				phy-mode = "rgmii";
+				tx-internal-delay-ps = <2000>;
+				rx-internal-delay-ps = <2100>;
+
+				fixed-link {
+					speed = <1000>;
+					full-duplex;
+				};
+			};
+		};
+	};
+};
