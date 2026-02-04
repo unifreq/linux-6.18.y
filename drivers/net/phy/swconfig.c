@@ -31,6 +31,7 @@
 #include "swconfig_leds.c"
 
 MODULE_AUTHOR("Felix Fietkau <nbd@nbd.name>");
+MODULE_DESCRIPTION("Openwrt switch configuration API using netlink");
 MODULE_LICENSE("GPL");
 
 static int swdev_id;

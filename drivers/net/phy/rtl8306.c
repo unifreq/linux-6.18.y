@@ -1059,5 +1059,6 @@ rtl_exit(void)
 
 module_init(rtl_init);
 module_exit(rtl_exit);
+MODULE_DESCRIPTION("Realtek RTL8306S ethernet switch driver");
 MODULE_LICENSE("GPL");
 
