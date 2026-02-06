@@ -138,9 +138,9 @@
 };
 
 &rtl8125_1 {
-	label = "eth2";
+	label = "eth3";
 };
 
 &rtl8125_2 {
-	label = "eth3";
+	label = "eth2";
 };
