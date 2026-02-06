@@ -17,8 +17,8 @@
 
 	aliases {
 		ethernet0 = &gmac1;
-		mmc0 = &sdhci;
-		mmc1 = &sdmmc;
+		mmc0 = &sdmmc;
+		mmc1 = &sdhci;
 	};
 
 	chosen {
@@ -50,6 +50,7 @@
 		led-0 {
 			color = <LED_COLOR_ID_GREEN>;
 			default-state = "on";
+			label = "green:power";
 			function = LED_FUNCTION_POWER;
 			gpios = <&gpio3 RK_PC4 GPIO_ACTIVE_HIGH>;
 			pinctrl-names = "default";
@@ -59,6 +60,7 @@
 		led-1 {
 			color = <LED_COLOR_ID_BLUE>;
 			default-state = "on";
+			label = "blue:user";
 			function = LED_FUNCTION_STATUS;
 			gpios = <&gpio3 RK_PD5 GPIO_ACTIVE_HIGH>;
 			linux,default-trigger = "heartbeat";
@@ -233,7 +235,7 @@
 
 &gmac1 {
 	phy-handle = <&rgmii_phy1>;
-	phy-mode = "rgmii-id";
+	phy-mode = "rgmii";
 	phy-supply = <&vcc_3v3_s0>;
 	pinctrl-0 = <&gmac1_miim
 		     &gmac1_tx_bus2
@@ -242,6 +244,8 @@
 		     &gmac1_rgmii_bus
 		     &gmac1_clkinout>;
 	pinctrl-names = "default";
+	tx_delay = <0x34>;
+	rx_delay = <0x2d>;
 	status = "okay";
 };
 
@@ -348,6 +352,23 @@
 	};
 };
 
+&i2c5 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&i2c5m2_xfer>;
+	status = "okay";
+
+	rtc@51 {
+		compatible = "haoyu,hym8563";
+		reg = <0x51>;
+		#clock-cells = <0>;
+		clock-output-names = "rtcic_32kout";
+		interrupt-parent = <&gpio0>;
+		interrupts = <RK_PB0 IRQ_TYPE_LEVEL_LOW>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&rtc_int_l>;
+	};
+};
+
 &i2c7 {
 	status = "okay";
 
@@ -396,6 +417,14 @@
 		reg = <1>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&gmac1_rstn>;
+
+		/*
+		 * RTL8211F Custom LED Mode B
+		 * LED1 (Green):  Link 10/100/1000
+		 * LED2 (Yellow): Active 10/100/1000
+		 */
+		realtek,led-data = <0xc160>;
+
 		reset-assert-us = <20000>;
 		reset-deassert-us = <100000>;
 		reset-gpios = <&gpio3 RK_PB7 GPIO_ACTIVE_LOW>;
@@ -484,6 +513,12 @@
 	regulators {
 		vcc_5v0_pwren_h: vcc-5v0-pwren-h {
 			rockchip,pins = <4 RK_PA3 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+
+	rtc {
+		rtc_int_l: rtc-int-l {
+			rockchip,pins = <0 RK_PB0 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
 	};
 
