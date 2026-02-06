@@ -774,9 +774,29 @@ void rtl8126_ptp_suspend(struct rtl8126_private *tp)
         hrtimer_cancel(&tp->pps_timer);
 }
 
+static const char *get_shutdown_state_str(enum system_states state)
+{
+	switch (state) {
+		case SYSTEM_HALT:       return "halt";
+		case SYSTEM_POWER_OFF:  return "power-off";
+		case SYSTEM_RESTART:    return "reboot";
+		case SYSTEM_SUSPEND:    return "suspend";
+		default:                return "non-shutdown";
+	}
+}
+
 void rtl8126_ptp_stop(struct rtl8126_private *tp)
 {
         struct net_device *netdev = tp->dev;
+
+	if (system_state == SYSTEM_HALT ||
+	    system_state == SYSTEM_POWER_OFF ||
+	    system_state == SYSTEM_RESTART) {
+		netif_info(tp, drv, tp->dev,
+                           "skipping PTP hardware disable during %s\n",
+                           get_shutdown_state_str(system_state));
+		return;
+	}
 
         netif_info(tp, drv, tp->dev, "stop PHC clock\n");
 
