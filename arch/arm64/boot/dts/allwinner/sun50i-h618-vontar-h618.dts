@@ -1,21 +1,6 @@
 // SPDX-License-Identifier: (GPL-2.0+ OR MIT)
 /*
  * Device tree for Vontar H618 TV box.
- *
- * Ported to linux-6.18.y (Armbian sunxi-6.18 patched tree). The only
- * change from the 6.12 version is that the Armbian BSP already supplies
- * &rmii_pins, &mdio1 and CLK_OSC32K_FANOUT, so the file is used mostly
- * verbatim. The bluetooth child uses the mainline "brcm,bcm43438-bt"
- * binding, so no BSP-only driver is required.
- *
- * SoC:      Allwinner H618 (quad Cortex-A53)
- * RAM:      4 GB DDR3
- * eMMC:     128 GB (on mmc2, 8-bit HS200)
- * Network:  100 Mbit RMII PHY on EMAC1
- * Wireless: SDIO Wi-Fi on mmc1 + BT on UART1 (bcm43438 family)
- * Video:    HDMI output (DE33 pipeline)
- * USB:      1 x USB 2.0 host port (ehci1/ohci1) + micro-USB OTG (usbotg)
- * PMIC:     X-Powers AXP313a on r_i2c
  */
 
 /dts-v1/;
@@ -65,27 +50,14 @@
 		regulator-always-on;
 	};
 
-	/*
-	 * Wi-Fi / BT module power.
-	 * WL_REG_ON is PG18, pulled high to enable the 3.3 V rail that feeds
-	 * both the Wi-Fi chip's VBAT and the BT VDDIO.
-	 */
-	reg_vcc_wifi: regulator-vcc-wifi {
-		compatible = "regulator-fixed";
-		regulator-name = "vcc-wifi";
-		regulator-min-microvolt = <3300000>;
-		regulator-max-microvolt = <3300000>;
-		enable-active-high;
-		gpio = <&pio 6 18 GPIO_ACTIVE_HIGH>; /* PG18 */
-		vin-supply = <&reg_dldo1>;
-	};
-
 	wifi_pwrseq: wifi-pwrseq {
 		compatible = "mmc-pwrseq-simple";
 		clocks = <&rtc CLK_OSC32K_FANOUT>;
 		clock-names = "ext_clock";
 		pinctrl-names = "default";
 		pinctrl-0 = <&x32clk_fanout_pin>;
+		reset-gpios = <&pio 6 18 GPIO_ACTIVE_LOW>; /* PG18 WL_REG_ON */
+		post-power-on-delay-ms = <200>;
 	};
 };
 
@@ -140,8 +112,8 @@
 };
 
 &mmc1 {
-	vmmc-supply = <&reg_vcc_wifi>;
-	vqmmc-supply = <&reg_vcc_wifi>;
+	vmmc-supply = <&reg_dldo1>;	/* 3.3 V VBAT */
+	vqmmc-supply = <&reg_aldo1>;	/* 1.8 V SDIO IO */
 	mmc-pwrseq = <&wifi_pwrseq>;
 	bus-width = <4>;
 	non-removable;
@@ -191,14 +163,15 @@
 			reg_dcdc1: dcdc1 {
 				regulator-always-on;
 				regulator-min-microvolt = <810000>;
-				regulator-max-microvolt = <990000>;
+				regulator-max-microvolt = <1160000>;
 				regulator-name = "vdd-gpu-sys";
 			};
 
 			reg_dcdc2: dcdc2 {
 				regulator-always-on;
 				regulator-min-microvolt = <810000>;
-				regulator-max-microvolt = <1100000>;
+				regulator-max-microvolt = <1160000>;
+				regulator-ramp-delay = <2500>;
 				regulator-name = "vdd-cpu";
 			};
 
@@ -243,18 +216,14 @@
 		compatible = "brcm,bcm43438-bt";
 		clocks = <&rtc CLK_OSC32K_FANOUT>;
 		clock-names = "lpo";
-		vbat-supply = <&reg_vcc_wifi>;
-		vddio-supply = <&reg_vcc_wifi>;
+		vbat-supply = <&reg_dldo1>;
+		vddio-supply = <&reg_dldo1>;
 		device-wakeup-gpios = <&pio 6 17 GPIO_ACTIVE_HIGH>; /* PG17 */
 		host-wakeup-gpios   = <&pio 6 16 GPIO_ACTIVE_HIGH>; /* PG16 */
 		shutdown-gpios      = <&pio 6 19 GPIO_ACTIVE_HIGH>; /* PG19 */
 	};
 };
 
-/*
- * The TV box has exactly one external USB 2.0 type-A port and an
- * (optional) micro-USB OTG that is usually wired as peripheral.
- */
 &ehci0 {
 	status = "okay";
 };
