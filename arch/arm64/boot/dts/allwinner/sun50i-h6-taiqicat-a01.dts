@@ -240,6 +240,7 @@
 			};
 
 			reg_aldo2: aldo2 {
+				regulator-always-on;
 				regulator-min-microvolt = <3300000>;
 				regulator-max-microvolt = <3300000>;
 				regulator-name = "vcc-ac200";
@@ -291,6 +292,7 @@
 			};
 
 			reg_cldo3: cldo3 {
+				regulator-always-on;
 				regulator-min-microvolt = <3300000>;
 				regulator-max-microvolt = <3300000>;
 				regulator-name = "vcc-wifi-2";
