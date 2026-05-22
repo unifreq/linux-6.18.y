@@ -182,6 +182,7 @@ dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3568-bdy-g18-pro.dtb
 dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3568-dg-nas-lite.dtb
 dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3568-dg-tn3568.dtb
 dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3568-easepi-r1.dtb
+dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3568-easepi-a2.dtb
 dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3568-ec-x.dtb
 dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3568-evb1-v10.dtb
 dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3568-fastrhino-r66s.dtb
