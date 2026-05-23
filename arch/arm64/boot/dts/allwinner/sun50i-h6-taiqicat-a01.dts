@@ -83,6 +83,7 @@
 		compatible = "mmc-pwrseq-simple";
 		clocks = <&rtc CLK_OSC32K_FANOUT>;
 		clock-names = "ext_clock";
+		reset-gpios = <&r_pio 0 8 GPIO_ACTIVE_LOW>; /* PL8, WL_REG_ON */
 		post-power-on-delay-ms = <200>;
 	};
 };
@@ -349,13 +350,6 @@
 	 * vcc-pl-supply = <&reg_aldo1>;
 	 */
 	vcc-pm-supply = <&reg_aldo1>;
-
-	wlan_reg_on_hog: wlan-reg-on-hog {
-		gpio-hog;
-		gpios = <8 GPIO_ACTIVE_HIGH>; /* PL8, WL_REG_ON */
-		output-high;
-		line-name = "WL_REG_ON";
-	};
 };
 
 &rtc {
