@@ -6,6 +6,7 @@
  */
 
 #include <linux/clk.h>
+#include <linux/etherdevice.h>
 #include <linux/io.h>
 #include <linux/iopoll.h>
 #include <linux/mdio-mux.h>
@@ -21,6 +22,8 @@
 #include <linux/regulator/consumer.h>
 #include <linux/regmap.h>
 #include <linux/stmmac.h>
+#include <linux/string.h>
+#include <linux/sunxi_sid.h>
 
 #include "stmmac.h"
 #include "stmmac_platform.h"
@@ -136,6 +139,17 @@ static const struct emac_variant emac_variant_h6 = {
 	 * co-packaged AC200 chip instead.
 	 */
 	.soc_has_internal_phy = false,
+	.support_mii = true,
+	.support_rmii = true,
+	.support_rgmii = true,
+	.rx_delay_max = 31,
+	.tx_delay_max = 7,
+};
+
+/* H616/H618 EMAC1 with the co-packaged AC300 EPHY */
+static const struct emac_variant emac_variant_h616_internal = {
+	.syscon_field = &sun8i_syscon_reg_field,
+	.soc_has_internal_phy = true,
 	.support_mii = true,
 	.support_rmii = true,
 	.support_rgmii = true,
@@ -600,6 +614,7 @@ static const struct stmmac_dma_ops sun8i_dwmac_dma_ops = {
 };
 
 static int sun8i_dwmac_power_internal_phy(struct stmmac_priv *priv);
+static int sun8i_dwmac_reset(struct stmmac_priv *priv);
 
 static int sun8i_dwmac_init(struct device *dev, void *priv)
 {
@@ -617,6 +632,13 @@ static int sun8i_dwmac_init(struct device *dev, void *priv)
 
 	if (gmac->use_internal_phy) {
 		ret = sun8i_dwmac_power_internal_phy(netdev_priv(ndev));
+		if (ret)
+			goto err_disable_regulator;
+
+		/* The MAC reset must happen after the internal PHY is
+		 * powered and clocked, otherwise it never completes.
+		 */
+		ret = sun8i_dwmac_reset(netdev_priv(ndev));
 		if (ret)
 			goto err_disable_regulator;
 	}
@@ -806,17 +828,28 @@ static int get_ephy_nodes(struct stmmac_priv *priv)
 		struct clk *ephy_clk;
 
 		ephy_clk = of_clk_get(iphynode, 0);
-		if (IS_ERR(ephy_clk))
-			continue;
-		gmac->rst_ephy = of_reset_control_get_exclusive(iphynode, NULL);
-		if (IS_ERR(gmac->rst_ephy)) {
-			ret = PTR_ERR(gmac->rst_ephy);
-			clk_put(ephy_clk);
+		if (IS_ERR(ephy_clk)) {
+			ret = PTR_ERR(ephy_clk);
 			if (ret == -EPROBE_DEFER) {
 				of_node_put(mdio_internal);
 				return ret;
 			}
-			continue;
+			/* Both the clock and the reset are optional: the AC300
+			 * binding describes the PHY with clocks/nvmem only, and
+			 * leaves it to the driver to power it up.
+			 */
+			ephy_clk = NULL;
+		}
+
+		gmac->rst_ephy = of_reset_control_get_exclusive(iphynode, NULL);
+		if (IS_ERR(gmac->rst_ephy)) {
+			ret = PTR_ERR(gmac->rst_ephy);
+			if (ret == -EPROBE_DEFER) {
+				clk_put(ephy_clk);
+				of_node_put(mdio_internal);
+				return ret;
+			}
+			gmac->rst_ephy = NULL;
 		}
 		gmac->ephy_clk = ephy_clk;
 		dev_info(priv->device, "Found internal PHY node\n");
@@ -895,7 +928,10 @@ static int mdio_mux_syscon_switch_fn(int current_child, int desired_child,
 		switch (desired_child) {
 		case DWMAC_SUN8I_MDIO_MUX_INTERNAL_ID:
 			dev_info(priv->device, "Switch mux to internal PHY");
-			val = (reg & ~H3_EPHY_MUX_MASK) | H3_EPHY_SELECT;
+			val = (reg & ~H3_EPHY_MUX_MASK);
+			/* H616/H618 have no H3-style EPHY select bit */
+			if (gmac->variant != &emac_variant_h616_internal)
+				val |= H3_EPHY_SELECT;
 			gmac->use_internal_phy = true;
 			break;
 		case DWMAC_SUN8I_MDIO_MUX_EXTERNAL_ID:
@@ -916,10 +952,15 @@ static int mdio_mux_syscon_switch_fn(int current_child, int desired_child,
 		} else {
 			sun8i_dwmac_unpower_internal_phy(gmac);
 		}
-		/* After changing syscon value, the MAC need reset or it will
-		 * use the last value (and so the last PHY set).
-		 */
-		ret = sun8i_dwmac_reset(priv);
+		if (!gmac->use_internal_phy) {
+			/* After changing syscon value, the MAC need reset or it
+			 * will use the last value (and so the last PHY set).
+			 * For the internal PHY the reset is deferred to
+			 * sun8i_dwmac_init(), once the PHY is powered and
+			 * clocked.
+			 */
+			ret = sun8i_dwmac_reset(priv);
+		}
 	}
 	return ret;
 }
@@ -1024,9 +1065,13 @@ static int sun8i_dwmac_set_syscon(struct device *dev,
 
 static void sun8i_dwmac_unset_syscon(struct sunxi_priv_data *gmac)
 {
-	if (gmac->variant->soc_has_internal_phy)
-		regmap_field_write(gmac->regmap_field,
-				   (H3_EPHY_SHUTDOWN | H3_EPHY_SELECT));
+	if (gmac->variant->soc_has_internal_phy) {
+		u32 val = H3_EPHY_SHUTDOWN;
+
+		if (gmac->variant != &emac_variant_h616_internal)
+			val |= H3_EPHY_SELECT;
+		regmap_field_write(gmac->regmap_field, val);
+	}
 }
 
 static void sun8i_dwmac_exit(struct device *dev, void *priv)
@@ -1202,6 +1247,26 @@ static int sun8i_dwmac_probe(struct platform_device *pdev)
 	}
 
 	plat_dat = devm_stmmac_probe_config_dt(pdev, stmmac_res.mac);
+	if (!IS_ERR(plat_dat) && is_zero_ether_addr(stmmac_res.mac)) {
+		u8 chipid[16];
+
+		if (sunxi_get_soc_chipid(chipid) == 0) {
+			if (!memchr_inv(chipid, 0, sizeof(chipid)))
+				return -EPROBE_DEFER;
+			/* Stable, locally administered address derived from
+			 * the SoC chip ID (there is no MAC in the DT for this
+			 * board).
+			 */
+			stmmac_res.mac[0] = 0x02;
+			stmmac_res.mac[1] = chipid[0] ^ chipid[1] ^ chipid[2];
+			stmmac_res.mac[2] = chipid[3] ^ chipid[4] ^ chipid[5];
+			stmmac_res.mac[3] = chipid[6] ^ chipid[7] ^ chipid[8];
+			stmmac_res.mac[4] = chipid[9] ^ chipid[10] ^ chipid[11];
+			stmmac_res.mac[5] = chipid[12] ^ chipid[13] ^ chipid[14] ^ chipid[15];
+			dev_info(dev, "generated stable MAC address from chipid: %pM\n",
+				 stmmac_res.mac);
+		}
+	}
 	if (IS_ERR(plat_dat))
 		return PTR_ERR(plat_dat);
 
@@ -1306,6 +1371,8 @@ static const struct of_device_id sun8i_dwmac_match[] = {
 		.data = &emac_variant_h6 },
 	{ .compatible = "allwinner,sun50i-h616-emac",
 		.data = &emac_variant_h6 },
+	{ .compatible = "allwinner,sun50i-h616-internal-emac",
+		.data = &emac_variant_h616_internal },
 	{ }
 };
 MODULE_DEVICE_TABLE(of, sun8i_dwmac_match);
