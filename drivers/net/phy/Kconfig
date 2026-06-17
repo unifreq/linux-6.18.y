@@ -156,6 +156,13 @@ config AC200_PHY
 	help
 	  Fast ethernet PHY as found in X-Powers AC200 multi-function device.
 
+config AC300_PHY
+	tristate "Allwinner AC300 EPHY support"
+	depends on OF && NVMEM
+	help
+	  Adds support for the integrated Fast Ethernet PHY (EPHY) inside the
+	  Allwinner H616/H618 SoC (X-Powers AC300).
+
 config AMD_PHY
 	tristate "AMD and Altima PHYs"
 	help
