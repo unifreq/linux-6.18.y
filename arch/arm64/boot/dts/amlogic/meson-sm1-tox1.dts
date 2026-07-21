@@ -344,15 +344,8 @@
 
 	bluetooth {
 		compatible = "realtek,rtl8822cs-bt";
-		interrupt-parent = <&gpio_intc>;
-		interrupts = <IRQID_GPIOX_18 IRQ_TYPE_LEVEL_HIGH>;
-		interrupt-names = "host-wakeup";
-		enable-gpios = <&gpio GPIOX_17 GPIO_ACTIVE_HIGH>;
+		enable-gpios = <&gpio GPIOX_18 GPIO_ACTIVE_HIGH>;
 		max-speed = <1500000>;
-		clocks = <&wifi32k>;
-		clock-names = "lpo";
-		vbat-supply = <&vddao_3v3>;
-		vddio-supply = <&vddio_ao1v8>;
 	};
 };
 
@@ -369,6 +362,8 @@
 };
 
 &sdio_pwrseq {
+	/* TOX1 Wi-Fi power-enable; the shared AC2xx default is GPIOX_6. */
+	reset-gpios = <&gpio GPIOX_7 GPIO_ACTIVE_LOW>;
 	post-power-on-delay-ms = <200>;
 	power-off-delay-us = <10000>;
 };
