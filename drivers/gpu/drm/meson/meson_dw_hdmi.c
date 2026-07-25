@@ -5,13 +5,16 @@
  * Copyright (C) 2015 Amlogic, Inc. All rights reserved.
  */
 
+#include <linux/bitfield.h>
 #include <linux/clk.h>
 #include <linux/component.h>
 #include <linux/kernel.h>
+#include <linux/mfd/syscon.h>
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/of_graph.h>
 #include <linux/platform_device.h>
+#include <linux/regmap.h>
 #include <linux/regulator/consumer.h>
 #include <linux/reset.h>
 
@@ -101,6 +104,16 @@
 #define HDMITX_DWC_DATA_REG	0x14
 #define HDMITX_DWC_CTRL_REG	0x18
 
+/* AO secure chip-id register holding the SoC version */
+#define AO_SEC_SD_CFG8		0xe0
+#define AO_SEC_SOCINFO_OFFSET	AO_SEC_SD_CFG8
+#define SOCINFO_MAJOR		GENMASK(31, 24)
+/*
+ * SoCs with a major ID >= 0x28 (G12A and newer, including GXLX2 such
+ * as the S905L3) use the directly mapped HDMI register interface
+ */
+#define SOCINFO_MAJOR_DIRECT_REGS	0x28
+
 /* HHI Registers */
 #define HHI_MEM_PD_REG0		0x100 /* 0x40 */
 #define HHI_HDMI_CLK_CNTL	0x1cc /* 0x73 */
@@ -148,12 +161,62 @@ struct meson_dw_hdmi {
 	u32 irq_stat;
 	struct dw_hdmi *hdmi;
 	struct drm_bridge *bridge;
+	unsigned int soc_major_id;
 };
 
 static inline int dw_hdmi_is_compatible(struct meson_dw_hdmi *dw_hdmi,
 					const char *compat)
 {
 	return of_device_is_compatible(dw_hdmi->dev->of_node, compat);
+}
+
+static unsigned int socinfo_to_major(u32 socinfo)
+{
+	return FIELD_GET(SOCINFO_MAJOR, socinfo);
+}
+
+/*
+ * Read the SoC major ID from the AO secure chip-id register.
+ *
+ * Newer GX-family SoCs (GXLX2, e.g. the S905L3 with major ID 0x2a) keep
+ * the legacy GXL display pipeline and HDMI PHY, but their HDMI controller
+ * register interface is directly mapped like on G12A instead of using
+ * the indirect addr/data register window.
+ *
+ * Returns 0 when the chip-id cannot be determined. 0 is below
+ * SOCINFO_MAJOR_DIRECT_REGS, so the driver conservatively keeps the
+ * legacy indirect register accessors in that case.
+ */
+static unsigned int hdmi_get_soc_major_id(void)
+{
+	struct device_node *np;
+	struct regmap *regmap;
+	u32 socinfo;
+	int ret;
+
+	/* Look up the chip-id node */
+	np = of_find_compatible_node(NULL, NULL, "amlogic,meson-gx-ao-secure");
+	if (!np)
+		return 0;
+
+	/* Check if the interface is enabled and carries the chip-id */
+	if (!of_device_is_available(np) ||
+	    !of_property_read_bool(np, "amlogic,has-chip-id")) {
+		of_node_put(np);
+		return 0;
+	}
+
+	/* The node should be a syscon */
+	regmap = syscon_node_to_regmap(np);
+	of_node_put(np);
+	if (IS_ERR(regmap))
+		return 0;
+
+	ret = regmap_read(regmap, AO_SEC_SOCINFO_OFFSET, &socinfo);
+	if (ret < 0 || !socinfo)
+		return 0;
+
+	return socinfo_to_major(socinfo);
 }
 
 /* PHY (via TOP bridge) and Controller dedicated register interface */
@@ -270,6 +333,49 @@ static inline void dw_hdmi_g12a_dwc_write(struct meson_dw_hdmi *dw_hdmi,
 					  unsigned int addr, unsigned int data)
 {
 	writeb(data, dw_hdmi->hdmitx + addr);
+}
+
+/*
+ * GX-family SoCs with a major ID >= SOCINFO_MAJOR_DIRECT_REGS (GXLX2,
+ * e.g. the S905L3) use the G12A-style directly mapped HDMI register
+ * layout, while older GX SoCs are reached through the indirect
+ * addr/data register window. Select the accessors at runtime based
+ * on the SoC major ID.
+ */
+static unsigned int dw_hdmi_gx_top_read(struct meson_dw_hdmi *dw_hdmi,
+					unsigned int addr)
+{
+	if (dw_hdmi->soc_major_id >= SOCINFO_MAJOR_DIRECT_REGS)
+		return dw_hdmi_g12a_top_read(dw_hdmi, addr);
+
+	return dw_hdmi_top_read(dw_hdmi, addr);
+}
+
+static inline void dw_hdmi_gx_top_write(struct meson_dw_hdmi *dw_hdmi,
+					unsigned int addr, unsigned int data)
+{
+	if (dw_hdmi->soc_major_id >= SOCINFO_MAJOR_DIRECT_REGS)
+		dw_hdmi_g12a_top_write(dw_hdmi, addr, data);
+	else
+		dw_hdmi_top_write(dw_hdmi, addr, data);
+}
+
+static unsigned int dw_hdmi_gx_dwc_read(struct meson_dw_hdmi *dw_hdmi,
+					unsigned int addr)
+{
+	if (dw_hdmi->soc_major_id >= SOCINFO_MAJOR_DIRECT_REGS)
+		return dw_hdmi_g12a_dwc_read(dw_hdmi, addr);
+
+	return dw_hdmi_dwc_read(dw_hdmi, addr);
+}
+
+static inline void dw_hdmi_gx_dwc_write(struct meson_dw_hdmi *dw_hdmi,
+					unsigned int addr, unsigned int data)
+{
+	if (dw_hdmi->soc_major_id >= SOCINFO_MAJOR_DIRECT_REGS)
+		dw_hdmi_g12a_dwc_write(dw_hdmi, addr, data);
+	else
+		dw_hdmi_dwc_write(dw_hdmi, addr, data);
 }
 
 /* Bridge */
@@ -578,10 +684,10 @@ static const struct meson_dw_hdmi_data meson_dw_hdmi_gxbb_data = {
 };
 
 static const struct meson_dw_hdmi_data meson_dw_hdmi_gxl_data = {
-	.top_read = dw_hdmi_top_read,
-	.top_write = dw_hdmi_top_write,
-	.dwc_read = dw_hdmi_dwc_read,
-	.dwc_write = dw_hdmi_dwc_write,
+	.top_read = dw_hdmi_gx_top_read,
+	.top_write = dw_hdmi_gx_top_write,
+	.dwc_read = dw_hdmi_gx_dwc_read,
+	.dwc_write = dw_hdmi_gx_dwc_write,
 	.cntl0_init = 0x0,
 	.cntl1_init = PHY_CNTL1_INIT,
 };
@@ -610,8 +716,13 @@ static void meson_dw_hdmi_init(struct meson_dw_hdmi *meson_dw_hdmi)
 	reset_control_reset(meson_dw_hdmi->hdmitx_ctrl);
 	reset_control_reset(meson_dw_hdmi->hdmitx_phy);
 
-	/* Enable APB3 fail on error */
-	if (!meson_vpu_is_compatible(priv, VPU_COMPATIBLE_G12A)) {
+	/*
+	 * Enable APB3 fail on error. The control registers behind the
+	 * indirect window only exist on SoCs with the legacy register
+	 * interface.
+	 */
+	if (!meson_vpu_is_compatible(priv, VPU_COMPATIBLE_G12A) &&
+	    meson_dw_hdmi->soc_major_id < SOCINFO_MAJOR_DIRECT_REGS) {
 		writel_bits_relaxed(BIT(15), BIT(15),
 				    meson_dw_hdmi->hdmitx + HDMITX_TOP_CTRL_REG);
 		writel_bits_relaxed(BIT(15), BIT(15),
@@ -695,6 +806,12 @@ static int meson_dw_hdmi_bind(struct device *dev, struct device *master,
 	meson_dw_hdmi->dev = dev;
 	meson_dw_hdmi->data = match;
 	dw_plat_data = &meson_dw_hdmi->dw_plat_data;
+
+	/*
+	 * Detect the SoC major ID to select the HDMI register accessors.
+	 * Stays 0 (legacy indirect access) when it cannot be determined.
+	 */
+	meson_dw_hdmi->soc_major_id = hdmi_get_soc_major_id();
 
 	ret = devm_regulator_get_enable_optional(dev, "hdmi");
 	if (ret < 0 && ret != -ENODEV)
