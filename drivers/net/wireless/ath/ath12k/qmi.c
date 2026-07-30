@@ -2602,27 +2602,33 @@ static void ath12k_qmi_free_mlo_mem_chunk(struct ath12k_base *ab,
 static void ath12k_qmi_free_target_mem_chunk(struct ath12k_base *ab)
 {
 	struct ath12k_hw_group *ag = ab->ag;
+	struct target_mem_chunk *chunk;
 	int i, mlo_idx;
 
 	for (i = 0, mlo_idx = 0; i < ab->qmi.mem_seg_count; i++) {
-		if (ab->qmi.target_mem[i].type == MLO_GLOBAL_MEM_REGION_TYPE) {
+		chunk = &ab->qmi.target_mem[i];
+
+		if (chunk->type == MLO_GLOBAL_MEM_REGION_TYPE) {
 			ath12k_qmi_free_mlo_mem_chunk(ab,
-						      &ab->qmi.target_mem[i],
+						      chunk,
 						      mlo_idx++);
 		} else {
 			if (test_bit(ATH12K_FLAG_FIXED_MEM_REGION, &ab->dev_flags) &&
-			    ab->qmi.target_mem[i].v.ioaddr) {
-				iounmap(ab->qmi.target_mem[i].v.ioaddr);
-				ab->qmi.target_mem[i].v.ioaddr = NULL;
+			    chunk->v.ioaddr) {
+				iounmap(chunk->v.ioaddr);
+				chunk->v.ioaddr = NULL;
 			} else {
-				if (!ab->qmi.target_mem[i].v.addr)
+				if (!chunk->v.addr)
 					continue;
 				dma_free_coherent(ab->dev,
-						  ab->qmi.target_mem[i].prev_size,
-						  ab->qmi.target_mem[i].v.addr,
-						  ab->qmi.target_mem[i].paddr);
-				ab->qmi.target_mem[i].v.addr = NULL;
+						  chunk->prev_size,
+						  chunk->v.addr,
+						  chunk->paddr);
+				chunk->v.addr = NULL;
 			}
+
+			chunk->paddr = 0;
+			chunk->size = 0;
 		}
 	}
 
