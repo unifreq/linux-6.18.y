@@ -18,7 +18,6 @@
 #define SLEEP_CLOCK_SELECT_INTERNAL_BIT	0x02
 #define HOST_CSTATE_BIT			0x04
 #define PLATFORM_CAP_PCIE_GLOBAL_RESET	0x08
-#define ATH12K_QMI_MAX_CHUNK_SIZE	2097152
 
 static const struct qmi_elem_info wlfw_host_mlo_chip_info_s_v01_ei[] = {
 	{
@@ -2655,7 +2654,7 @@ static int ath12k_qmi_alloc_chunk(struct ath12k_base *ab,
 					   &chunk->paddr,
 					   GFP_KERNEL | __GFP_NOWARN);
 	if (!chunk->v.addr) {
-		if (chunk->size > ATH12K_QMI_MAX_CHUNK_SIZE) {
+		if (chunk->size > ab->hw_params->qmi_max_chunk_size) {
 			ab->qmi.target_mem_delayed = true;
 			ath12k_warn(ab,
 				    "qmi dma allocation failed (%u B type %u), will try later with small size\n",
