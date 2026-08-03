@@ -1204,27 +1204,6 @@ void ath12k_dp_rx_h_undecap(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *msdu
 }
 EXPORT_SYMBOL(ath12k_dp_rx_h_undecap);
 
-struct ath12k_dp_link_peer *
-ath12k_dp_rx_h_find_link_peer(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *msdu,
-			      struct hal_rx_desc_data *rx_info)
-{
-	struct ath12k_skb_rxcb *rxcb = ATH12K_SKB_RXCB(msdu);
-	struct ath12k_dp_link_peer *peer = NULL;
-	struct ath12k_dp *dp = dp_pdev->dp;
-
-	lockdep_assert_held(&dp->dp_lock);
-
-	peer = ath12k_dp_link_peer_find_by_peerid(dp_pdev, rxcb->peer_id);
-
-	if (peer)
-		return peer;
-
-	if (rx_info->addr2_present)
-		peer = ath12k_dp_link_peer_find_by_addr(dp, rx_info->addr2);
-
-	return peer;
-}
-
 static void ath12k_dp_rx_h_rate(struct ath12k_pdev_dp *dp_pdev,
 				struct hal_rx_desc_data *rx_info)
 {
