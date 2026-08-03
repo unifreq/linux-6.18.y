@@ -2544,9 +2544,16 @@ static inline bool ieee80211_is_tdls_setup(struct sk_buff *skb)
 	       skb->data[14] == WLAN_TDLS_SNAP_RFTYPE;
 }
 
-int ieee80211_lookup_ra_sta(struct ieee80211_sub_if_data *sdata,
-			    struct sk_buff *skb,
-			    struct sta_info **sta_out)
+/*
+ * Returns an error if the frame should be dropped, otherwise
+ * the *sta_out pointer is filled:
+ *  - valid sta pointer: frame goes to that station
+ *  - NULL: frame will be unicast to a yet unknown station
+ *  - ERR_PTR(-ENOENT): frame will be group addressed
+ */
+static int ieee80211_lookup_ra_sta(struct ieee80211_sub_if_data *sdata,
+				   struct sk_buff *skb,
+				   struct sta_info **sta_out)
 {
 	struct sta_info *sta;
 
@@ -2571,6 +2578,10 @@ int ieee80211_lookup_ra_sta(struct ieee80211_sub_if_data *sdata,
 		break;
 #ifdef CONFIG_MAC80211_MESH
 	case NL80211_IFTYPE_MESH_POINT:
+		if (is_multicast_ether_addr(skb->data)) {
+			*sta_out = ERR_PTR(-ENOENT);
+			return 0;
+		}
 		/* determined much later */
 		*sta_out = NULL;
 		return 0;
@@ -2613,7 +2624,7 @@ int ieee80211_lookup_ra_sta(struct ieee80211_sub_if_data *sdata,
 		return -EINVAL;
 	}
 
-	*sta_out = sta ?: ERR_PTR(-ENOENT);
+	*sta_out = sta;
 	return 0;
 }
 
