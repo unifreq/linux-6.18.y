@@ -1911,7 +1911,8 @@ static int meson_mmc_probe(struct platform_device *pdev)
 	struct mmc_host *mmc;
 	struct clk *core_clk;
 	unsigned int i;
-	int cd_irq, ret;
+	int cd_irq = -ENXIO;
+	int ret;
 
 	host = devm_kzalloc(&pdev->dev, sizeof(*host), GFP_KERNEL);
 	if (!host)
@@ -1951,7 +1952,11 @@ static int meson_mmc_probe(struct platform_device *pdev)
 	 * meson_mmc_cd_gpio_poll_start()).
 	 */
 	if (!host->multi_slot) {
-		cd_irq = platform_get_irq_optional(pdev, 1);
+		ret = platform_get_irq_optional(pdev, 1);
+		if (ret < 0 && ret != -ENXIO)
+			return ret;
+		if (ret > 0)
+			cd_irq = ret;
 		mmc_gpio_set_cd_irq(host->mmc, cd_irq);
 	}
 
