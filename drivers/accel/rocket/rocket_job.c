@@ -553,6 +553,8 @@ int rocket_job_open(struct rocket_file_priv *rocket_priv)
 				    rdev->num_cores, NULL);
 	if (WARN_ON(ret))
 		kfree(scheds);
+	else
+		rocket_priv->scheds = scheds;
 
 	return ret;
 }
@@ -561,7 +563,7 @@ void rocket_job_close(struct rocket_file_priv *rocket_priv)
 {
 	struct drm_sched_entity *entity = &rocket_priv->sched_entity;
 
-	kfree(entity->sched_list);
+	kfree(rocket_priv->scheds);
 	drm_sched_entity_destroy(entity);
 }
 
