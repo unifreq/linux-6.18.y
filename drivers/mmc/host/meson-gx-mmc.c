@@ -549,7 +549,7 @@ static int meson_mmc_clk_set(struct meson_slot *slot, unsigned long rate,
  */
 static int meson_mmc_clk_init(struct meson_host *host)
 {
-	struct clk_init_data init;
+	struct clk_init_data init = {};
 	struct clk_mux *mux;
 	struct clk_divider *div;
 	char clk_name[32];
