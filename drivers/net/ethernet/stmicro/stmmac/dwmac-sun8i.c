@@ -269,11 +269,41 @@ static const struct emac_variant emac_variant_h6 = {
 #define SYSCON_ETCS_EXT_GMII	0x1
 #define SYSCON_ETCS_INT_GMII	0x2
 
+/* sun8i_dwmac_soft_reset() - issue the MAC software reset
+ *
+ * The Synopsys DMA soft reset only completes once the PHY is driving the
+ * RMII receive clock, so it must not be issued before the PHY is up.
+ */
+static int sun8i_dwmac_soft_reset(void __iomem *ioaddr)
+{
+	u32 v;
+
+	v = readl(ioaddr + EMAC_BASIC_CTL1);
+	writel(v | 0x01, ioaddr + EMAC_BASIC_CTL1);
+
+	/* The timeout was previously set to 10ms, but some board (OrangePI0)
+	 * need more if no cable plugged.
+	 */
+	return readl_poll_timeout(ioaddr + EMAC_BASIC_CTL1, v,
+				  !(v & 0x01), 100, 1000000);
+}
+
 /* sun8i_dwmac_dma_reset() - reset the EMAC
  * Called from stmmac via stmmac_dma_ops->reset
  */
 static int sun8i_dwmac_dma_reset(void __iomem *ioaddr)
 {
+	int err;
+
+	/* Reset the MAC here rather than at probe time: by now phylib has
+	 * attached and resumed the PHY, so its RMII clock is running and the
+	 * DMA soft reset can complete -- including after a warm reboot that
+	 * left the PHY powered down.
+	 */
+	err = sun8i_dwmac_soft_reset(ioaddr);
+	if (err)
+		return err;
+
 	writel(0, ioaddr + EMAC_RX_CTL1);
 	writel(0, ioaddr + EMAC_TX_CTL1);
 	writel(0, ioaddr + EMAC_RX_FRM_FLT);
@@ -740,21 +770,12 @@ static void sun8i_dwmac_flow_ctrl(struct mac_device_info *hw,
 
 static int sun8i_dwmac_reset(struct stmmac_priv *priv)
 {
-	u32 v;
-	int err;
-
-	v = readl(priv->ioaddr + EMAC_BASIC_CTL1);
-	writel(v | 0x01, priv->ioaddr + EMAC_BASIC_CTL1);
-
-	/* The timeout was previously set to 10ms, but some board (OrangePI0)
-	 * need more if no cable plugged.
-	 */
-	err = readl_poll_timeout(priv->ioaddr + EMAC_BASIC_CTL1, v,
-				 !(v & 0x01), 100, 1000000);
+	int err = sun8i_dwmac_soft_reset(priv->ioaddr);
 
 	if (err)
 		dev_err(priv->device, "EMAC reset timeout (BASIC_CTL1=0x%08x), continuing\n",
 			readl(priv->ioaddr + EMAC_BASIC_CTL1));
+
 	return 0;
 }
 
@@ -1226,10 +1247,6 @@ static int sun8i_dwmac_probe(struct platform_device *pdev)
 			dev_err(&pdev->dev, "Failed to register mux\n");
 			goto dwmac_mux;
 		}
-	} else {
-		ret = sun8i_dwmac_reset(priv);
-		if (ret)
-			goto dwmac_remove;
 	}
 
 	pm_runtime_put(&pdev->dev);
