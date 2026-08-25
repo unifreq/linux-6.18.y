@@ -498,132 +498,127 @@ static inline u64 gpu_read64_counter(void __iomem *iomem, u32 reg)
 #define INT_MASK    0x8
 #define INT_STAT    0xc
 
-/**
- * PANTHOR_IRQ_HANDLER() - Define interrupt handlers and the interrupt
- * registration function.
- *
- * The boiler-plate to gracefully deal with shared interrupts is
- * auto-generated. All you have to do is call PANTHOR_IRQ_HANDLER()
- * just after the actual handler. The handler prototype is:
- *
- * void (*handler)(struct panthor_device *, u32 status);
- */
-#define PANTHOR_IRQ_HANDLER(__name, __handler)							\
-static irqreturn_t panthor_ ## __name ## _irq_raw_handler(int irq, void *data)			\
-{												\
-	struct panthor_irq *pirq = data;							\
-												\
-	guard(spinlock_irqsave)(&pirq->lock);							\
-	if (pirq->state != PANTHOR_IRQ_STATE_ACTIVE)						\
-		return IRQ_NONE;								\
-												\
-	if (!gpu_read(pirq->iomem, INT_STAT))							\
-		return IRQ_NONE;								\
-												\
-	pirq->state = PANTHOR_IRQ_STATE_PROCESSING;						\
-	gpu_write(pirq->iomem, INT_MASK, 0);							\
-	return IRQ_WAKE_THREAD;									\
-}												\
-												\
-static irqreturn_t panthor_ ## __name ## _irq_threaded_handler(int irq, void *data)		\
-{												\
-	struct panthor_irq *pirq = data;							\
-	struct panthor_device *ptdev = pirq->ptdev;						\
-	irqreturn_t ret = IRQ_NONE;								\
-												\
-	while (true) {										\
-		/* It's safe to access pirq->mask without the lock held here. If a new		\
-		 * event gets added to the mask and the corresponding IRQ is pending,		\
-		 * we'll process it right away instead of adding an extra raw -> threaded	\
-		 * round trip. If an event is removed and the status bit is set, it will	\
-		 * be ignored, just like it would have been if the mask had been adjusted	\
-		 * right before the HW event kicks in. TLDR; it's all expected races we're	\
-		 * covered for.									\
-		 */										\
-		u32 status = gpu_read(pirq->iomem, INT_RAWSTAT) & pirq->mask;			\
-												\
-		if (!status)									\
-			break;									\
-												\
-		__handler(ptdev, status);							\
-		ret = IRQ_HANDLED;								\
-	}											\
-												\
-	scoped_guard(spinlock_irqsave, &pirq->lock) {						\
-		if (pirq->state == PANTHOR_IRQ_STATE_PROCESSING) {				\
-			pirq->state = PANTHOR_IRQ_STATE_ACTIVE;					\
-			gpu_write(pirq->iomem, INT_MASK, pirq->mask);				\
-		}										\
-	}											\
-												\
-	return ret;										\
-}												\
-												\
-static inline void panthor_ ## __name ## _irq_suspend(struct panthor_irq *pirq)			\
-{												\
-	scoped_guard(spinlock_irqsave, &pirq->lock) {						\
-		pirq->state = PANTHOR_IRQ_STATE_SUSPENDING;					\
-		gpu_write(pirq->iomem, INT_MASK, 0);						\
-	}											\
-	synchronize_irq(pirq->irq);								\
-	scoped_guard(spinlock_irqsave, &pirq->lock)						\
-		pirq->state = PANTHOR_IRQ_STATE_SUSPENDED;					\
-}												\
-												\
-static inline void panthor_ ## __name ## _irq_resume(struct panthor_irq *pirq)			\
-{												\
-	guard(spinlock_irqsave)(&pirq->lock);							\
-												\
-	pirq->state = PANTHOR_IRQ_STATE_ACTIVE;							\
-	gpu_write(pirq->iomem, INT_CLEAR, pirq->mask);						\
-	gpu_write(pirq->iomem, INT_MASK, pirq->mask);						\
-}												\
-												\
-static int panthor_request_ ## __name ## _irq(struct panthor_device *ptdev,			\
-					      struct panthor_irq *pirq,				\
-					      int irq, void __iomem *iomem)			\
-{												\
-	pirq->ptdev = ptdev;									\
-	pirq->irq = irq;									\
-	pirq->mask = 0;										\
-	pirq->iomem = iomem;									\
-	spin_lock_init(&pirq->lock);								\
-	pirq->state = PANTHOR_IRQ_STATE_SUSPENDED;						\
-	gpu_write(pirq->iomem, INT_MASK, 0);							\
-												\
-	return devm_request_threaded_irq(ptdev->base.dev, irq,					\
-					 panthor_ ## __name ## _irq_raw_handler,		\
-					 panthor_ ## __name ## _irq_threaded_handler,		\
-					 IRQF_SHARED, KBUILD_MODNAME "-" # __name,		\
-					 pirq);							\
-}												\
-												\
-static inline void panthor_ ## __name ## _irq_enable_events(struct panthor_irq *pirq, u32 mask)	\
-{												\
-	guard(spinlock_irqsave)(&pirq->lock);							\
-	pirq->mask |= mask;									\
-												\
-	/* The only situation where we need to write the new mask is if the IRQ is active.	\
-	 * If it's being processed, the mask will be restored for us in _irq_threaded_handler()	\
-	 * on the PROCESSING -> ACTIVE transition.						\
-	 * If the IRQ is suspended/suspending, the mask is restored at resume time.		\
-	 */											\
-	if (pirq->state == PANTHOR_IRQ_STATE_ACTIVE)						\
-		gpu_write(pirq->iomem, INT_MASK, pirq->mask);					\
-}												\
-												\
-static inline void panthor_ ## __name ## _irq_disable_events(struct panthor_irq *pirq, u32 mask)\
-{												\
-	guard(spinlock_irqsave)(&pirq->lock);							\
-	pirq->mask &= ~mask;									\
-												\
-	/* The only situation where we need to write the new mask is if the IRQ is active.	\
-	 * If it's being processed, the mask will be restored for us in _irq_threaded_handler()	\
-	 * on the PROCESSING -> ACTIVE transition.						\
-	 * If the IRQ is suspended/suspending, the mask is restored at resume time.		\
-	 */											\
-	if (pirq->state == PANTHOR_IRQ_STATE_ACTIVE)						\
-		gpu_write(pirq->iomem, INT_MASK, pirq->mask);					\
+static inline irqreturn_t panthor_irq_default_raw_handler(int irq, void *data)
+{
+	struct panthor_irq *pirq = data;
+
+	guard(spinlock_irqsave)(&pirq->lock);
+	if (pirq->state != PANTHOR_IRQ_STATE_ACTIVE)
+		return IRQ_NONE;
+
+	if (!gpu_read(pirq->iomem, INT_STAT))
+		return IRQ_NONE;
+
+	pirq->state = PANTHOR_IRQ_STATE_PROCESSING;
+	gpu_write(pirq->iomem, INT_MASK, 0);
+	return IRQ_WAKE_THREAD;
+}
+
+static __always_inline irqreturn_t
+panthor_irq_default_threaded_handler(void *data,
+				     void (*slow_handler)(struct panthor_irq *, u32))
+{
+	struct panthor_irq *pirq = data;
+	irqreturn_t ret = IRQ_NONE;
+
+	while (true) {
+		/* It's safe to access pirq->mask without the lock held here. If a new
+		 * event gets added to the mask and the corresponding IRQ is pending,
+		 * we'll process it right away instead of adding an extra raw -> threaded
+		 * round trip. If an event is removed and the status bit is set, it will
+		 * be ignored, just like it would have been if the mask had been adjusted
+		 * right before the HW event kicks in. TLDR; it's all expected races we're
+		 * covered for.
+		 */
+		u32 status = gpu_read(pirq->iomem, INT_RAWSTAT) & pirq->mask;
+
+		if (!status)
+			break;
+
+		slow_handler(pirq, status);
+		ret = IRQ_HANDLED;
+	}
+
+	scoped_guard(spinlock_irqsave, &pirq->lock) {
+		if (pirq->state == PANTHOR_IRQ_STATE_PROCESSING) {
+			pirq->state = PANTHOR_IRQ_STATE_ACTIVE;
+			gpu_write(pirq->iomem, INT_MASK, pirq->mask);
+		}
+	}
+
+	return ret;
+}
+
+static inline void panthor_irq_suspend(struct panthor_irq *pirq)
+{
+	scoped_guard(spinlock_irqsave, &pirq->lock) {
+		pirq->state = PANTHOR_IRQ_STATE_SUSPENDING;
+		gpu_write(pirq->iomem, INT_MASK, 0);
+	}
+	synchronize_irq(pirq->irq);
+	scoped_guard(spinlock_irqsave, &pirq->lock)
+		pirq->state = PANTHOR_IRQ_STATE_SUSPENDED;
+}
+
+static inline void panthor_irq_resume(struct panthor_irq *pirq)
+{
+	guard(spinlock_irqsave)(&pirq->lock);
+	pirq->state = PANTHOR_IRQ_STATE_ACTIVE;
+	gpu_write(pirq->iomem, INT_CLEAR, pirq->mask);
+	gpu_write(pirq->iomem, INT_MASK, pirq->mask);
+}
+
+static inline void panthor_irq_enable_events(struct panthor_irq *pirq, u32 mask)
+{
+	guard(spinlock_irqsave)(&pirq->lock);
+	pirq->mask |= mask;
+
+	/* The only situation where we need to write the new mask is if the IRQ is active.
+	 * If it's being processed, the mask will be restored for us in _irq_threaded_handler()
+	 * on the PROCESSING -> ACTIVE transition.
+	 * If the IRQ is suspended/suspending, the mask is restored at resume time.
+	 */
+	if (pirq->state == PANTHOR_IRQ_STATE_ACTIVE)
+		gpu_write(pirq->iomem, INT_MASK, pirq->mask);
+}
+
+static inline void panthor_irq_disable_events(struct panthor_irq *pirq, u32 mask)
+{
+	guard(spinlock_irqsave)(&pirq->lock);
+	pirq->mask &= ~mask;
+
+	/* The only situation where we need to write the new mask is if the IRQ is active.
+	 * If it's being processed, the mask will be restored for us in _irq_threaded_handler()
+	 * on the PROCESSING -> ACTIVE transition.
+	 * If the IRQ is suspended/suspending, the mask is restored at resume time.
+	 */
+	if (pirq->state == PANTHOR_IRQ_STATE_ACTIVE)
+		gpu_write(pirq->iomem, INT_MASK, pirq->mask);
+}
+
+static inline int
+panthor_irq_request(struct panthor_device *ptdev, struct panthor_irq *pirq,
+		    int irq, void __iomem *iomem, const char *name,
+		    irqreturn_t (*threaded_handler)(int, void *data))
+{
+	const char *full_name;
+
+	pirq->ptdev = ptdev;
+	pirq->irq = irq;
+	pirq->mask = 0;
+	pirq->iomem = iomem;
+	spin_lock_init(&pirq->lock);
+	pirq->state = PANTHOR_IRQ_STATE_SUSPENDED;
+
+	full_name = devm_kasprintf(ptdev->base.dev, GFP_KERNEL, KBUILD_MODNAME "-%s", name);
+	if (!full_name)
+		return -ENOMEM;
+
+	gpu_write(pirq->iomem, INT_MASK, 0);
+	return devm_request_threaded_irq(ptdev->base.dev, irq,
+					 panthor_irq_default_raw_handler,
+					 threaded_handler,
+					 IRQF_SHARED, full_name, pirq);
 }
 
 extern struct workqueue_struct *panthor_cleanup_wq;
