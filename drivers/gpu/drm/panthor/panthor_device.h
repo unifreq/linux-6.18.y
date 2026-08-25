@@ -91,17 +91,21 @@ struct panthor_irq {
 	u32 mask;
 
 	/**
-	 * @mask_lock: protects modifications to _INT_MASK and @mask.
+	 * @lock: protects modifications to _INT_MASK, @mask and @state.
 	 *
 	 * In paths where _INT_MASK is updated based on a state
 	 * transition/check, it's crucial for the state update/check to be
 	 * inside the locked section, otherwise it introduces a race window
 	 * leading to potential _INT_MASK inconsistencies.
 	 */
-	spinlock_t mask_lock;
+	spinlock_t lock;
 
-	/** @state: one of &enum panthor_irq_state reflecting the current state. */
-	atomic_t state;
+	/**
+	 * @state: one of &enum panthor_irq_state reflecting the current state.
+	 *
+	 * Must be accessed with lock held.
+	 */
+	enum panthor_irq_state state;
 };
 
 /**
@@ -437,22 +441,15 @@ const char *panthor_exception_name(struct panthor_device *ptdev,
 static irqreturn_t panthor_ ## __name ## _irq_raw_handler(int irq, void *data)			\
 {												\
 	struct panthor_irq *pirq = data;							\
-	enum panthor_irq_state old_state;							\
 												\
-	guard(spinlock_irqsave)(&pirq->mask_lock);						\
-	old_state = atomic_cmpxchg(&pirq->state,						\
-				   PANTHOR_IRQ_STATE_ACTIVE,					\
-				   PANTHOR_IRQ_STATE_PROCESSING);				\
-	if (old_state != PANTHOR_IRQ_STATE_ACTIVE)						\
+	guard(spinlock_irqsave)(&pirq->lock);							\
+	if (pirq->state != PANTHOR_IRQ_STATE_ACTIVE)						\
 		return IRQ_NONE;								\
 												\
-	if (!gpu_read(pirq->iomem, INT_STAT)) {							\
-		atomic_cmpxchg(&pirq->state,							\
-			       PANTHOR_IRQ_STATE_PROCESSING,					\
-			       PANTHOR_IRQ_STATE_ACTIVE);					\
+	if (!gpu_read(pirq->iomem, INT_STAT))							\
 		return IRQ_NONE;								\
-	}											\
 												\
+	pirq->state = PANTHOR_IRQ_STATE_PROCESSING;						\
 	gpu_write(pirq->iomem, INT_MASK, 0);							\
 	return IRQ_WAKE_THREAD;									\
 }												\
@@ -481,14 +478,11 @@ static irqreturn_t panthor_ ## __name ## _irq_threaded_handler(int irq, void *da
 		ret = IRQ_HANDLED;								\
 	}											\
 												\
-	scoped_guard(spinlock_irqsave, &pirq->mask_lock) {					\
-		enum panthor_irq_state old_state;						\
-												\
-		old_state = atomic_cmpxchg(&pirq->state,					\
-					   PANTHOR_IRQ_STATE_PROCESSING,			\
-					   PANTHOR_IRQ_STATE_ACTIVE);				\
-		if (old_state == PANTHOR_IRQ_STATE_PROCESSING)					\
+	scoped_guard(spinlock_irqsave, &pirq->lock) {						\
+		if (pirq->state == PANTHOR_IRQ_STATE_PROCESSING) {				\
+			pirq->state = PANTHOR_IRQ_STATE_ACTIVE;					\
 			gpu_write(pirq->iomem, INT_MASK, pirq->mask);				\
+		}										\
 	}											\
 												\
 	return ret;										\
@@ -496,19 +490,20 @@ static irqreturn_t panthor_ ## __name ## _irq_threaded_handler(int irq, void *da
 												\
 static inline void panthor_ ## __name ## _irq_suspend(struct panthor_irq *pirq)			\
 {												\
-	scoped_guard(spinlock_irqsave, &pirq->mask_lock) {					\
-		atomic_set(&pirq->state, PANTHOR_IRQ_STATE_SUSPENDING);				\
+	scoped_guard(spinlock_irqsave, &pirq->lock) {						\
+		pirq->state = PANTHOR_IRQ_STATE_SUSPENDING;					\
 		gpu_write(pirq->iomem, INT_MASK, 0);						\
 	}											\
 	synchronize_irq(pirq->irq);								\
-	atomic_set(&pirq->state, PANTHOR_IRQ_STATE_SUSPENDED);					\
+	scoped_guard(spinlock_irqsave, &pirq->lock)						\
+		pirq->state = PANTHOR_IRQ_STATE_SUSPENDED;					\
 }												\
 												\
 static inline void panthor_ ## __name ## _irq_resume(struct panthor_irq *pirq)			\
 {												\
-	guard(spinlock_irqsave)(&pirq->mask_lock);						\
+	guard(spinlock_irqsave)(&pirq->lock);							\
 												\
-	atomic_set(&pirq->state, PANTHOR_IRQ_STATE_ACTIVE);					\
+	pirq->state = PANTHOR_IRQ_STATE_ACTIVE;							\
 	gpu_write(pirq->iomem, INT_CLEAR, pirq->mask);						\
 	gpu_write(pirq->iomem, INT_MASK, pirq->mask);						\
 }												\
@@ -521,8 +516,8 @@ static int panthor_request_ ## __name ## _irq(struct panthor_device *ptdev,			\
 	pirq->irq = irq;									\
 	pirq->mask = 0;										\
 	pirq->iomem = iomem;									\
-	spin_lock_init(&pirq->mask_lock);							\
-	atomic_set(&pirq->state, PANTHOR_IRQ_STATE_SUSPENDED);					\
+	spin_lock_init(&pirq->lock);								\
+	pirq->state = PANTHOR_IRQ_STATE_SUSPENDED;						\
 	gpu_write(pirq->iomem, INT_MASK, 0);							\
 												\
 	return devm_request_threaded_irq(ptdev->base.dev, irq,					\
@@ -534,7 +529,7 @@ static int panthor_request_ ## __name ## _irq(struct panthor_device *ptdev,			\
 												\
 static inline void panthor_ ## __name ## _irq_enable_events(struct panthor_irq *pirq, u32 mask)	\
 {												\
-	guard(spinlock_irqsave)(&pirq->mask_lock);						\
+	guard(spinlock_irqsave)(&pirq->lock);							\
 	pirq->mask |= mask;									\
 												\
 	/* The only situation where we need to write the new mask is if the IRQ is active.	\
@@ -542,13 +537,13 @@ static inline void panthor_ ## __name ## _irq_enable_events(struct panthor_irq *
 	 * on the PROCESSING -> ACTIVE transition.						\
 	 * If the IRQ is suspended/suspending, the mask is restored at resume time.		\
 	 */											\
-	if (atomic_read(&pirq->state) == PANTHOR_IRQ_STATE_ACTIVE)				\
+	if (pirq->state == PANTHOR_IRQ_STATE_ACTIVE)						\
 		gpu_write(pirq->iomem, INT_MASK, pirq->mask);					\
 }												\
 												\
 static inline void panthor_ ## __name ## _irq_disable_events(struct panthor_irq *pirq, u32 mask)\
 {												\
-	guard(spinlock_irqsave)(&pirq->mask_lock);						\
+	guard(spinlock_irqsave)(&pirq->lock);							\
 	pirq->mask &= ~mask;									\
 												\
 	/* The only situation where we need to write the new mask is if the IRQ is active.	\
@@ -556,7 +551,7 @@ static inline void panthor_ ## __name ## _irq_disable_events(struct panthor_irq 
 	 * on the PROCESSING -> ACTIVE transition.						\
 	 * If the IRQ is suspended/suspending, the mask is restored at resume time.		\
 	 */											\
-	if (atomic_read(&pirq->state) == PANTHOR_IRQ_STATE_ACTIVE)				\
+	if (pirq->state == PANTHOR_IRQ_STATE_ACTIVE)						\
 		gpu_write(pirq->iomem, INT_MASK, pirq->mask);					\
 }
 
