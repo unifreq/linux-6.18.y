@@ -698,9 +698,6 @@ struct panthor_group {
 	 */
 	struct panthor_kernel_bo *protm_suspend_buf;
 
-	/** @sync_upd_work: Work used to check/signal job fences. */
-	struct work_struct sync_upd_work;
-
 	/** @tiler_oom_work: Work used to process tiler OOM events happening on this group. */
 	struct work_struct tiler_oom_work;
 
@@ -1764,6 +1761,92 @@ static void csg_slot_process_idle_event_locked(struct panthor_device *ptdev, u32
 	sched_queue_delayed_work(sched, tick, 0);
 }
 
+static void update_fdinfo_stats(struct panthor_job *job)
+{
+	struct panthor_group *group = job->group;
+	struct panthor_queue *queue = group->queues[job->queue_idx];
+	struct panthor_gpu_usage *fdinfo = &group->fdinfo.data;
+	struct panthor_job_profiling_data *slots = queue->profiling.slots->kmap;
+	struct panthor_job_profiling_data *data = &slots[job->profiling.slot];
+
+	scoped_guard(spinlock, &group->fdinfo.lock) {
+		if (job->profiling.mask & PANTHOR_DEVICE_PROFILING_CYCLES)
+			fdinfo->cycles += data->cycles.after - data->cycles.before;
+		if (job->profiling.mask & PANTHOR_DEVICE_PROFILING_TIMESTAMP)
+			fdinfo->time += data->time.after - data->time.before;
+	}
+}
+
+static bool queue_check_job_completion(struct panthor_queue *queue)
+{
+	struct panthor_syncobj_64b *syncobj = NULL;
+	struct panthor_job *job, *job_tmp;
+	bool cookie, progress = false;
+	LIST_HEAD(done_jobs);
+
+	cookie = dma_fence_begin_signalling();
+	scoped_guard(spinlock_irqsave, &queue->fence_ctx.lock) {
+		list_for_each_entry_safe(job, job_tmp, &queue->fence_ctx.in_flight_jobs, node) {
+			if (!syncobj) {
+				struct panthor_group *group = job->group;
+
+				syncobj = group->syncobjs->kmap +
+					  (job->queue_idx * sizeof(*syncobj));
+			}
+
+			if (syncobj->seqno < job->done_fence->seqno)
+				break;
+
+			list_move_tail(&job->node, &done_jobs);
+			dma_fence_signal_locked(job->done_fence);
+		}
+
+		if (list_empty(&queue->fence_ctx.in_flight_jobs)) {
+			/* If we have no job left, we cancel the timer, and reset remaining
+			 * time to its default so it can be restarted next time
+			 * queue_resume_timeout() is called.
+			 */
+			queue_suspend_timeout_locked(queue);
+
+			/* If there's no job pending, we consider it progress to avoid a
+			 * spurious timeout if the timeout handler and the sync update
+			 * handler raced.
+			 */
+			progress = true;
+		} else if (!list_empty(&done_jobs)) {
+			queue_reset_timeout_locked(queue);
+			progress = true;
+		}
+	}
+	dma_fence_end_signalling(cookie);
+
+	list_for_each_entry_safe(job, job_tmp, &done_jobs, node) {
+		if (job->profiling.mask)
+			update_fdinfo_stats(job);
+		list_del_init(&job->node);
+		panthor_job_put(&job->base);
+	}
+
+	return progress;
+}
+
+static void group_check_job_completion(struct panthor_group *group)
+{
+	u32 queue_idx;
+	bool cookie;
+
+	cookie = dma_fence_begin_signalling();
+	for (queue_idx = 0; queue_idx < group->queue_count; queue_idx++) {
+		struct panthor_queue *queue = group->queues[queue_idx];
+
+		if (!queue)
+			continue;
+
+		queue_check_job_completion(queue);
+	}
+	dma_fence_end_signalling(cookie);
+}
+
 static void csg_slot_sync_update_locked(struct panthor_device *ptdev,
 					u32 csg_id)
 {
@@ -1773,7 +1856,7 @@ static void csg_slot_sync_update_locked(struct panthor_device *ptdev,
 	lockdep_assert_held(&ptdev->scheduler->events_lock);
 
 	if (group)
-		group_queue_work(group, sync_upd);
+		group_check_job_completion(group);
 
 	sched_queue_work(ptdev->scheduler, sync_upd);
 }
@@ -3042,22 +3125,6 @@ void panthor_sched_post_reset(struct panthor_device *ptdev, bool reset_failed)
 	}
 }
 
-static void update_fdinfo_stats(struct panthor_job *job)
-{
-	struct panthor_group *group = job->group;
-	struct panthor_queue *queue = group->queues[job->queue_idx];
-	struct panthor_gpu_usage *fdinfo = &group->fdinfo.data;
-	struct panthor_job_profiling_data *slots = queue->profiling.slots->kmap;
-	struct panthor_job_profiling_data *data = &slots[job->profiling.slot];
-
-	scoped_guard(spinlock, &group->fdinfo.lock) {
-		if (job->profiling.mask & PANTHOR_DEVICE_PROFILING_CYCLES)
-			fdinfo->cycles += data->cycles.after - data->cycles.before;
-		if (job->profiling.mask & PANTHOR_DEVICE_PROFILING_TIMESTAMP)
-			fdinfo->time += data->time.after - data->time.before;
-	}
-}
-
 void panthor_fdinfo_gather_group_samples(struct panthor_file *pfile)
 {
 	struct panthor_group_pool *gpool = pfile->groups;
@@ -3076,80 +3143,6 @@ void panthor_fdinfo_gather_group_samples(struct panthor_file *pfile)
 		group->fdinfo.data.time = 0;
 	}
 	xa_unlock(&gpool->xa);
-}
-
-static bool queue_check_job_completion(struct panthor_queue *queue)
-{
-	struct panthor_syncobj_64b *syncobj = NULL;
-	struct panthor_job *job, *job_tmp;
-	bool cookie, progress = false;
-	LIST_HEAD(done_jobs);
-
-	cookie = dma_fence_begin_signalling();
-	scoped_guard(spinlock_irqsave, &queue->fence_ctx.lock) {
-		list_for_each_entry_safe(job, job_tmp, &queue->fence_ctx.in_flight_jobs, node) {
-			if (!syncobj) {
-				struct panthor_group *group = job->group;
-
-				syncobj = group->syncobjs->kmap +
-					  (job->queue_idx * sizeof(*syncobj));
-			}
-
-			if (syncobj->seqno < job->done_fence->seqno)
-				break;
-
-			list_move_tail(&job->node, &done_jobs);
-			dma_fence_signal_locked(job->done_fence);
-		}
-
-		if (list_empty(&queue->fence_ctx.in_flight_jobs)) {
-			/* If we have no job left, we cancel the timer, and reset remaining
-			 * time to its default so it can be restarted next time
-			 * queue_resume_timeout() is called.
-			 */
-			queue_suspend_timeout_locked(queue);
-
-			/* If there's no job pending, we consider it progress to avoid a
-			 * spurious timeout if the timeout handler and the sync update
-			 * handler raced.
-			 */
-			progress = true;
-		} else if (!list_empty(&done_jobs)) {
-			queue_reset_timeout_locked(queue);
-			progress = true;
-		}
-	}
-	dma_fence_end_signalling(cookie);
-
-	list_for_each_entry_safe(job, job_tmp, &done_jobs, node) {
-		if (job->profiling.mask)
-			update_fdinfo_stats(job);
-		list_del_init(&job->node);
-		panthor_job_put(&job->base);
-	}
-
-	return progress;
-}
-
-static void group_sync_upd_work(struct work_struct *work)
-{
-	struct panthor_group *group =
-		container_of(work, struct panthor_group, sync_upd_work);
-	u32 queue_idx;
-	bool cookie;
-
-	cookie = dma_fence_begin_signalling();
-	for (queue_idx = 0; queue_idx < group->queue_count; queue_idx++) {
-		struct panthor_queue *queue = group->queues[queue_idx];
-
-		if (!queue)
-			continue;
-
-		queue_check_job_completion(queue);
-	}
-	dma_fence_end_signalling(cookie);
-
-	group_put(group);
 }
 
 struct panthor_job_ringbuf_instrs {
@@ -3722,7 +3715,6 @@ int panthor_group_create(struct panthor_file *pfile,
 	INIT_LIST_HEAD(&group->wait_node);
 	INIT_LIST_HEAD(&group->run_node);
 	INIT_WORK(&group->term_work, group_term_work);
-	INIT_WORK(&group->sync_upd_work, group_sync_upd_work);
 	INIT_WORK(&group->tiler_oom_work, group_tiler_oom_work);
 	INIT_WORK(&group->release_work, group_release_work);
 
