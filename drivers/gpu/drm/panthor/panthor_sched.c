@@ -1734,8 +1734,6 @@ static void csg_slot_process_idle_event_locked(struct panthor_device *ptdev, u32
 
 	lockdep_assert_held(&sched->lock);
 
-	sched->might_have_idle_groups = true;
-
 	/* Schedule a tick so we can evict idle groups and schedule non-idle
 	 * ones. This will also update runtime PM and devfreq busy/idle states,
 	 * so the device can lower its frequency or get suspended.
