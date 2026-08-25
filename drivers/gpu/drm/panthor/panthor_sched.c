@@ -178,23 +178,6 @@ struct panthor_scheduler {
 	struct work_struct sync_upd_work;
 
 	/**
-	 * @fw_events_work: Work used to process FW events outside the interrupt path.
-	 *
-	 * Even if the interrupt is threaded, we need any event processing
-	 * that require taking the panthor_scheduler::lock to be processed
-	 * outside the interrupt path so we don't block the tick logic when
-	 * it calls panthor_fw_{csg,wait}_wait_acks(). Since most of the
-	 * event processing requires taking this lock, we just delegate all
-	 * FW event processing to the scheduler workqueue.
-	 */
-	struct work_struct fw_events_work;
-
-	/**
-	 * @fw_events: Bitmask encoding pending FW events.
-	 */
-	atomic_t fw_events;
-
-	/**
 	 * @resched_target: When the next tick should occur.
 	 *
 	 * Expressed in jiffies.
@@ -1973,14 +1956,17 @@ static void sched_process_global_irq_locked(struct panthor_device *ptdev)
 		sched_process_idle_event_locked(ptdev);
 }
 
-static void process_fw_events_work(struct work_struct *work)
+/**
+ * panthor_sched_report_fw_events() - Report FW events to the scheduler.
+ * @ptdev: Device.
+ * @events: Bitmask of pending FW events to report.
+ */
+void panthor_sched_report_fw_events(struct panthor_device *ptdev, u32 events)
 {
-	struct panthor_scheduler *sched = container_of(work, struct panthor_scheduler,
-						      fw_events_work);
-	u32 events = atomic_xchg(&sched->fw_events, 0);
-	struct panthor_device *ptdev = sched->ptdev;
+	if (!ptdev->scheduler)
+		return;
 
-	guard(spinlock)(&sched->events_lock);
+	guard(spinlock)(&ptdev->scheduler->events_lock);
 
 	if (events & JOB_INT_GLOBAL_IF) {
 		sched_process_global_irq_locked(ptdev);
@@ -1993,18 +1979,6 @@ static void process_fw_events_work(struct work_struct *work)
 		sched_process_csg_irq_locked(ptdev, csg_id);
 		events &= ~BIT(csg_id);
 	}
-}
-
-/**
- * panthor_sched_report_fw_events() - Report FW events to the scheduler.
- */
-void panthor_sched_report_fw_events(struct panthor_device *ptdev, u32 events)
-{
-	if (!ptdev->scheduler)
-		return;
-
-	atomic_or(events, &ptdev->scheduler->fw_events);
-	sched_queue_work(ptdev->scheduler, fw_events);
 }
 
 static const char *fence_get_driver_name(struct dma_fence *fence)
@@ -4086,7 +4060,6 @@ void panthor_sched_unplug(struct panthor_device *ptdev)
 	struct panthor_scheduler *sched = ptdev->scheduler;
 
 	disable_delayed_work_sync(&sched->tick_work);
-	disable_work_sync(&sched->fw_events_work);
 	disable_work_sync(&sched->sync_upd_work);
 
 	mutex_lock(&sched->lock);
@@ -4171,7 +4144,6 @@ int panthor_sched_init(struct panthor_device *ptdev)
 	sched->tick_period = msecs_to_jiffies(10);
 	INIT_DELAYED_WORK(&sched->tick_work, tick_work);
 	INIT_WORK(&sched->sync_upd_work, sync_upd_work);
-	INIT_WORK(&sched->fw_events_work, process_fw_events_work);
 
 	spin_lock_init(&sched->events_lock);
 
