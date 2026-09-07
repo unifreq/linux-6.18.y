@@ -1019,7 +1019,7 @@ static void _rtl8821ae_hw_configure(struct ieee80211_hw *hw)
 	/* ARFB table 12 for 11ac 24G 1SS */
 	rtl_write_dword(rtlpriv, REG_ARFR3, 0x00000015);
 	rtl_write_dword(rtlpriv, REG_ARFR3 + 4, 0xffcff000);
-	/* 0x420[7] = 0 , enable retry AMPDU in new AMPD not singal MPDU. */
+	/* 0x420[7] = 0 , enable retry AMPDU in new AMPD not signal MPDU. */
 	rtl_write_word(rtlpriv, REG_FWHW_TXQ_CTRL, 0x1F00);
 	rtl_write_byte(rtlpriv, REG_AMPDU_MAX_TIME, 0x70);
 

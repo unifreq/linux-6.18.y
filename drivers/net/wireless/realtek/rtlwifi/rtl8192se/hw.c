@@ -982,7 +982,7 @@ int rtl92se_hw_init(struct ieee80211_hw *hw)
 
 	/* because last function modify RCR, so we update
 	 * rcr var here, or TP will unstable for receive_config
-	 * is wrong, RX RCR_ACRC32 will cause TP unstabel & Rx
+	 * is wrong, RX RCR_ACRC32 will cause TP unstable & Rx
 	 * RCR_APP_ICV will cause mac80211 unassoc for cisco 1252
 	 */
 	rtlpci->receive_config = rtl_read_dword(rtlpriv, RCR);
@@ -2350,8 +2350,10 @@ bool rtl92se_gpio_radio_on_off_checking(struct ieee80211_hw *hw, u8 *valid)
 
 }
 
-/* Is_wepkey just used for WEP used as group & pairwise key
- * if pairwise is AES ang group is WEP Is_wepkey == false.*/
+/*
+ * Is_wepkey just used for WEP used as group & pairwise key
+ * if pairwise is AES and group is WEP Is_wepkey == false.
+ */
 void rtl92se_set_key(struct ieee80211_hw *hw, u32 key_index, u8 *p_macaddr,
 	bool is_group, u8 enc_algo, bool is_wepkey, bool clear_all)
 {
