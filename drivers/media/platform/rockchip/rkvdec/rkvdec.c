@@ -1824,10 +1824,8 @@ static int rkvdec_probe(struct platform_device *pdev)
 	ret = devm_request_threaded_irq(&pdev->dev, irq, NULL,
 					rkvdec_irq_handler, IRQF_ONESHOT,
 					dev_name(&pdev->dev), rkvdec);
-	if (ret) {
-		dev_err(&pdev->dev, "Could not request vdec IRQ\n");
+	if (ret)
 		return ret;
-	}
 
 	rkvdec->sram_pool = of_gen_pool_get(pdev->dev.of_node, "sram", 0);
 	if (!rkvdec->sram_pool && rkvdec->variant->num_rcb_sizes > 0)
