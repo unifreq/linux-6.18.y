@@ -6094,6 +6094,7 @@ struct rtw89_fw_suit {
 struct rtw89_fw_req_info {
 	const struct firmware *firmware;
 	struct completion completion;
+	bool free_after_probe;
 };
 
 struct rtw89_fw_log {
