@@ -233,7 +233,7 @@
 		simple-audio-card,name = "realtek,rt5651-codec";
 		simple-audio-card,format = "i2s";
 		simple-audio-card,mclk-fs = <256>;
-		simple-audio-card,hp-det-gpios = <&gpio4 RK_PD4 GPIO_ACTIVE_HIGH>;
+		simple-audio-card,hp-det-gpios = <&gpio4 RK_PD4 GPIO_ACTIVE_LOW>;
 		simple-audio-card,aux-devs = <&speaker_amp>;
 		simple-audio-card,pin-switches = "Speaker";
 		simple-audio-card,widgets =
