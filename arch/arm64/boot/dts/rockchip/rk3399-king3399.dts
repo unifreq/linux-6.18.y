@@ -233,7 +233,7 @@
 		simple-audio-card,name = "realtek,rt5651-codec";
 		simple-audio-card,format = "i2s";
 		simple-audio-card,mclk-fs = <256>;
-		simple-audio-card,hp-det-gpios = <&gpio4 RK_PD4 GPIO_ACTIVE_HIGH>;
+		simple-audio-card,hp-det-gpios = <&gpio4 RK_PD4 GPIO_ACTIVE_LOW>;
 		simple-audio-card,aux-devs = <&speaker_amp>;
 		simple-audio-card,pin-switches = "Speaker";
 		simple-audio-card,widgets =
@@ -242,6 +242,9 @@
 			"Speaker", "Speaker";
 		simple-audio-card,routing =
 			"Mic Jack", "micbias1",
+			"MIC1", "Mic Jack",
+			"MIC2", "Mic Jack",
+			"MIC3", "Mic Jack",
 			"Headphones", "HPOL",
 			"Headphones", "HPOR",
 			"Speaker Amplifier INL", "HPOL",
@@ -253,6 +256,7 @@
 		};
 		simple-audio-card,codec {
 			sound-dai = <&rt5651>;
+			clocks = <&cru SCLK_I2S_8CH_OUT>;
 		};
 	};
 
