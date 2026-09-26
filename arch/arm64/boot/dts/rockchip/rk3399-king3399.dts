@@ -242,6 +242,9 @@
 			"Speaker", "Speaker";
 		simple-audio-card,routing =
 			"Mic Jack", "micbias1",
+			"MIC1", "Mic Jack",
+			"MIC2", "Mic Jack",
+			"MIC3", "Mic Jack",
 			"Headphones", "HPOL",
 			"Headphones", "HPOR",
 			"Speaker Amplifier INL", "HPOL",
