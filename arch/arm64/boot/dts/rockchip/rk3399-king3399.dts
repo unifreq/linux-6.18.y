@@ -253,6 +253,7 @@
 		};
 		simple-audio-card,codec {
 			sound-dai = <&rt5651>;
+			clocks = <&cru SCLK_I2S_8CH_OUT>;
 		};
 	};
 
