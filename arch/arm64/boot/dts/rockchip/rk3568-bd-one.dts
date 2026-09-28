@@ -1,82 +1,72 @@
 // SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * Ported to Linux 6.18 kernel.
+ * rk3568-bd-one.k6.18v1.1-2026.09.26-cnb@srv.wang
+ *
+ * arch/arm64/boot/dts/rockchip/Makefile
+ *   dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3568-bd-one.dtb
+ *
+ *  GPU、SATA1、SATA2、USB、NVME、GMAC0、GMAC1、FAN、LED、温度传感器等功能已测试正常。
+ *  vpu 禁用，HDMI无法正常使用。
+ */
 
 /dts-v1/;
 
 #include <dt-bindings/gpio/gpio.h>
-#include <dt-bindings/pwm/pwm.h>
-#include <dt-bindings/leds/common.h>
 #include <dt-bindings/input/input.h>
-#include <dt-bindings/soc/rockchip,vop2.h>
+#include <dt-bindings/leds/common.h>
 #include <dt-bindings/pinctrl/rockchip.h>
-#include <dt-bindings/thermal/thermal.h>
+#include <dt-bindings/soc/rockchip,vop2.h>
 #include "rk3568.dtsi"
+#include "rk3568-crypto.dtsi"
 
 / {
-	model = "BenDian One RK3568 Ultimate Pro Router";
+	model = "BenDian One";
 	compatible = "bendian,bd-one", "rockchip,rk3568";
 
 	aliases {
 		ethernet0 = &gmac0;
 		ethernet1 = &gmac1;
 		mmc0 = &sdhci;
-		serial2 = &uart2;
+		led-boot     = &led_status;
+		led-failsafe = &led_power;
+		led-running  = &led_status;
+		led-upgrade  = &led_power;
 	};
 
 	chosen {
 		stdout-path = "serial2:1500000n8";
 	};
 
-	cpu0_opp_table: opp-table-0 {
-		compatible = "operating-points-v2";
-		opp-shared;
-		opp-408000000  { opp-hz = /bits/ 64 <408000000>;  opp-microvolt = <825000>; };
-		opp-600000000  { opp-hz = /bits/ 64 <600000000>;  opp-microvolt = <825000>; };
-		opp-816000000  { opp-hz = /bits/ 64 <816000000>;  opp-microvolt = <825000>; };
-		opp-1104000000 { opp-hz = /bits/ 64 <1104000000>; opp-microvolt = <825000>; };
-		opp-1416000000 { opp-hz = /bits/ 64 <1416000000>; opp-microvolt = <900000>; };
-		opp-1608000000 { opp-hz = /bits/ 64 <1608000000>; opp-microvolt = <1000000>; };
-		opp-1800000000 { opp-hz = /bits/ 64 <1800000000>; opp-microvolt = <1100000>; };
-		opp-1992000000 { opp-hz = /bits/ 64 <1992000000>; opp-microvolt = <1150000>; };
+	/* ---------------------------------------------------------------- */
+	/*  Memory-reserved: CMA pool                                       */
+	/* ---------------------------------------------------------------- */
+	reserved-memory {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+
+		cma: linux,cma {
+			compatible = "shared-dma-pool";
+			reusable;
+			size = <0x0 0x10000000>;
+			linux,cma-default;
+		};
 	};
 
-	gpu_opp_table: opp-table-1 {
-		compatible = "operating-points-v2";
-		opp-200000000 { opp-hz = /bits/ 64 <200000000>; opp-microvolt = <825000>; };
-		opp-400000000 { opp-hz = /bits/ 64 <400000000>; opp-microvolt = <825000>; };
-		opp-600000000 { opp-hz = /bits/ 64 <600000000>; opp-microvolt = <900000>; };
-		opp-800000000 { opp-hz = /bits/ 64 <800000000>; opp-microvolt = <1000000>; };
-	};
-
-	fiq-debugger {
-		compatible = "rockchip,fiq-debugger";
-		rockchip,serial-id = <2>;
-		rockchip,wake-irq = <0>;
-		rockchip,irq-mode-enable = <1>;
-		rockchip,baudrate = <1500000>;
-		interrupts = <GIC_SPI 252 IRQ_TYPE_LEVEL_LOW>;
-		pinctrl-names = "default";
-		pinctrl-0 = <&uart2m0_xfer>;
-		status = "okay";
-	};
-
-	fan: gpio-fan {
-		compatible = "gpio-fan";
-		gpios = <&gpio4 RK_PA7 GPIO_ACTIVE_HIGH>;
-		gpio-fan,speed-map = <0 0>, <3000 1>;
-		pinctrl-names = "default";
-		pinctrl-0 = <&fan_pins>;
-		#cooling-cells = <2>;
-	};
-
-	leds {
+	/* ---------------------------------------------------------------- */
+	/*  LEDs                                                            */
+	/* ---------------------------------------------------------------- */
+	gpio-leds {
 		compatible = "gpio-leds";
 		pinctrl-names = "default";
-		pinctrl-0 = <&led_pins>;
+		pinctrl-0 = <&power_led_pin &status_led_pin>;
+
 		led_power: led-0 {
 			label = "red:power";
 			gpios = <&gpio4 RK_PB3 GPIO_ACTIVE_LOW>;
-			default-state = "on";
 		};
+
 		led_status: led-1 {
 			label = "green:status";
 			gpios = <&gpio4 RK_PB1 GPIO_ACTIVE_LOW>;
@@ -84,325 +74,825 @@
 		};
 	};
 
-	vcc3v3_pcie: vcc3v3-pcie {
-		compatible = "regulator-fixed";
-		regulator-name = "vcc3v3_pcie";
-		enable-active-high;
-		gpio = <&gpio0 RK_PC0 GPIO_ACTIVE_HIGH>;
+	/* ---------------------------------------------------------------- */
+	/*  GPIO Fan 主板风扇 需要启用编译config：CONFIG_SENSORS_GPIO_FAN=y   */
+	/* ---------------------------------------------------------------- */
+	bfan: gpio-fan {
+		compatible = "gpio-fan";
+		fan-supply = <&vcc12v_dcin>; 
+		gpios = <&gpio4 RK_PA7 GPIO_ACTIVE_HIGH>;
+		gpio-fan,speed-map = <0 0 7500 1>;
 		pinctrl-names = "default";
-		pinctrl-0 = <&pcie30_pwr_pin>;
-		regulator-boot-on;
-		regulator-always-on;
-		vin-supply = <&vcc3v3_sys>;
+		pinctrl-0 = <&fan_pins>;
+		#cooling-cells = <2>;
 	};
 
-	dc_12v: dc-12v {
+	/* ---------------------------------------------------------------- */
+	/*  HDMI connector                                                  */
+	/* ---------------------------------------------------------------- */
+	hdmi-con {
+		compatible = "hdmi-connector";
+		label = "hdmi";
+		type = "a";
+		status = "okay";
+		ddc-i2c-bus = <&i2c3>;	/* DDC 走 I2C3，需要板子原理图确认 */
+
+		port {
+			hdmi_con_in: endpoint {
+				remote-endpoint = <&hdmi_out_con>;
+			};
+		};
+	};
+
+	/* ---------------------------------------------------------------- */
+	/*  ADC recovery button                                             */
+	/* ---------------------------------------------------------------  */
+	adc-keys {
+		compatible = "adc-keys";
+		io-channels = <&saradc 0>;
+		io-channel-names = "buttons";
+		keyup-threshold-microvolt = <1800000>;
+		poll-interval = <100>;
+
+		button-recovery {
+			label = "Recovery";
+			linux,code = <KEY_VENDOR>;
+			press-threshold-microvolt = <1750000>;
+		};
+	};
+
+	/* --------------------------------------------------------------- */
+	/*  Power supply rails                                             */
+	/* --------------------------------------------------------------- */
+	vcc12v_dcin: vcc12v-dcin {
 		compatible = "regulator-fixed";
+		regulator-name = "vcc12v_dcin";
 		regulator-always-on;
+		regulator-boot-on;
 		regulator-min-microvolt = <12000000>;
 		regulator-max-microvolt = <12000000>;
 	};
 
 	vcc3v3_sys: vcc3v3-sys {
 		compatible = "regulator-fixed";
+		regulator-name = "vcc3v3_sys";
 		regulator-always-on;
-		vin-supply = <&dc_12v>;
+		regulator-boot-on;
 		regulator-min-microvolt = <3300000>;
 		regulator-max-microvolt = <3300000>;
+		vin-supply = <&vcc12v_dcin>;
+	};
+
+	/* PCIe 3.0 SSD power:
+	* GPIO0_C0 enable → vcc3v3_pi6c_03 → vcc3v3_pcie
+	*/
+	vcc3v3_pi6c_03: vcc3v3-pi6c-03 {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc3v3_pi6c_03";
+		enable-active-high;
+		gpios = <&gpio0 RK_PC0 GPIO_ACTIVE_HIGH>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&ssd_pwr_en>;
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		vin-supply = <&vcc12v_dcin>;
+		 /* “启动”时间等待 2000µs */
+		regulator-enable-ramp-delay = <2000>;
+	};
+
+	vcc3v3_pcie: vcc3v3-pcie {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc3v3_pcie";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		vin-supply = <&vcc3v3_pi6c_03>;
+	};
+
+	vcc5v0_sys: vcc5v0-sys {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc5v0_sys";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+		vin-supply = <&vcc12v_dcin>;
+	};
+
+	/* 5V USB power controlled by GPIO0_C1 */
+	vcc5v0_usb: vcc5v0-usb {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc5v0_usb";
+		enable-active-high;
+		gpios = <&gpio0 RK_PC1 GPIO_ACTIVE_HIGH>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&usb_pwr_en>;
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+		vin-supply = <&vcc5v0_sys>;
+	};
+
+	vcc_3v3: vcc-3v3 {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc_3v3";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		vin-supply = <&vcc3v3_sys>;
+	};
+
+	vcca_1v8: vcca-1v8 {
+		compatible = "regulator-fixed";
+		regulator-name = "vcca_1v8";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <1800000>;
+		regulator-max-microvolt = <1800000>;
+		vin-supply = <&vcc3v3_sys>;
+	};
+
+	vdda_0v9: vdda-0v9 {
+		compatible = "regulator-fixed";
+		regulator-name = "vdda_0v9";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <900000>;
+		regulator-max-microvolt = <900000>;
+		vin-supply = <&vcc3v3_sys>;
+	};
+
+	/* 1.8V IO rail — board fixed regulator (NOT RK809 DCDC) */
+	vcc_1v8: vcc-1v8 {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc_1v8";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <1800000>;
+		regulator-max-microvolt = <1800000>;
+		vin-supply = <&vcc3v3_sys>;
+	};
+
+
+	/* GPU core — PWM regulator on PWM4 (per factory DTS, NOT RK809) */
+	vdd_gpu: vdd-gpu {
+		compatible = "pwm-regulator";
+		pwms = <&pwm4 0 5000 1>;
+		pwm-supply = <&vcc3v3_sys>;
+		regulator-name = "vdd_gpu";
+		// regulator-always-on;
+		// regulator-boot-on;
+		regulator-init-microvolt = <900000>;
+		regulator-min-microvolt = <500000>;
+		regulator-max-microvolt = <1350000>;
+		regulator-ramp-delay = <6001>;
+		regulator-settling-time-up-us = <250>;
+	};
+
+	/* Logic core — PWM regulator on PWM5 (per factory DTS, NOT RK809) */
+	vdd_logic: vdd-logic {
+		compatible = "pwm-regulator";
+		pwms = <&pwm5 0 5000 1>;
+		pwm-supply = <&vcc3v3_sys>;
+		regulator-name = "vdd_logic";
+		// regulator-always-on;
+		// regulator-boot-on;
+		regulator-init-microvolt = <900000>;
+		regulator-min-microvolt = <500000>;
+		regulator-max-microvolt = <1350000>;
+		regulator-ramp-delay = <6001>;
+		regulator-settling-time-up-us = <250>;
 	};
 };
 
-&pmu_io_domains {
-	status = "okay";
-	pmuio1-supply = <&vcc3v3_pmu>;
-	pmuio2-supply = <&vcc3v3_pmu>;
-	vccio1-supply = <&vcc3v3_sys>;
-	vccio2-supply = <&vcc_1v8>;
-	vccio3-supply = <&vcc3v3_sys>;
-	vccio4-supply = <&vcc3v3_sys>;
-	vccio5-supply = <&vcc3v3_sys>;
-	vccio6-supply = <&vcc3v3_sys>;
-	vccio7-supply = <&vcc3v3_sys>;
+/* ====================================================================== */
+/*  CPU / GPU power domains                                               */
+/* ====================================================================== */
+&cpu0 {
+	cpu-supply = <&vdd_cpu>;
+};
+
+&cpu1 {
+	cpu-supply = <&vdd_cpu>;
+};
+
+&cpu2 {
+	cpu-supply = <&vdd_cpu>;
+};
+
+&cpu3 {
+	cpu-supply = <&vdd_cpu>;
 };
 
 &gpu {
-	status = "okay";
+	// /delete-property/ operating-points-v2;
 	mali-supply = <&vdd_gpu>;
-	operating-points-v2 = <&gpu_opp_table>;
+	status = "okay";
 };
 
-&vpu { status = "okay"; };
-&rga { status = "okay"; };
-
-&hdmi {
-	status = "okay";
+/* ====================================================================== */
+/*  eMMC(fe310000) -OK  use hs200 mode                                    */
+/* ====================================================================== */
+&sdhci {
+	bus-width = <8>;
+	max-frequency = <200000000>;
+	non-removable;
 	pinctrl-names = "default";
-	pinctrl-0 = <&hdmitx_scl &hdmitx_sda &hdmitxm0_cec>;
-};
-&hdmi_in { status = "okay"; };
-&vop { status = "okay"; };
-
-&combphy0 { status = "okay"; };
-&combphy2 { status = "okay"; };
-&sata0 { status = "okay"; };
-&sata2 { status = "okay"; };
-
-&mdio0 {
-	#address-cells = <1>;
-	#size-cells = <0>;
-	rtl8367s: switch@1d {
-		compatible = "realtek,rtl8365mb";
-		reg = <0x1d>;
-		reset-gpios = <&gpio1 RK_PA3 GPIO_ACTIVE_LOW>;
-		ports {
-			#address-cells = <1>;
-			#size-cells = <0>;
-			port@0 { reg = <0>; label = "lan4"; };
-			port@1 { reg = <1>; label = "lan3"; };
-			port@2 { reg = <2>; label = "lan2"; };
-			port@3 { reg = <3>; label = "lan1"; };
-			port@7 {
-				reg = <7>;
-				label = "cpu";
-				ethernet = <&gmac0>;
-				phy-mode = "rgmii";
-				fixed-link { speed = <1000>; full-duplex; };
-			};
-		};
-	};
-};
-
-&gmac0 {
-	status = "okay";
-	phy-mode = "rgmii";
-	tx_delay = <0x4f>;
-	rx_delay = <0x0f>;
-	pinctrl-names = "default";
-	pinctrl-0 = <&gmac0_miim &gmac0_tx_bus2 &gmac0_rx_bus2 &gmac0_rgmii_clk &gmac0_rgmii_bus>;
-};
-
-&gmac1 {
-	status = "okay";
-	phy-mode = "rgmii";
-	snps,reset-gpio = <&gpio0 RK_PC5 GPIO_ACTIVE_LOW>;
-	tx_delay = <0x4f>;
-	rx_delay = <0x26>;
-	pinctrl-0 = <&gmac1m1_miim &gmac1m1_tx_bus2 &gmac1m1_rx_bus2 &gmac1m1_rgmii_clk &gmac1m1_rgmii_bus>;
-	phy-handle = <&rgmii_phy1>;
-};
-
-&mdio1 {
-	rgmii_phy1: phy@0 {
-		compatible = "ethernet-phy-ieee802.3-c22";
-		reg = <0x0>;
-	};
-};
-
-&pcie3x2 {
-	reset-gpios = <&gpio0 RK_PC6 GPIO_ACTIVE_HIGH>;
-	vpcie3v3-supply = <&vcc3v3_pcie>;
-	aspm-no-l0s;
+	pinctrl-0 = <&emmc_bus8 &emmc_clk &emmc_cmd>;
+	mmc-hs200-1_8v;
+	vmmc-supply = <&vcc_3v3>;
+	vqmmc-supply = <&vcc_1v8>;
 	status = "okay";
 };
 
+/* ====================================================================== */
+/*  Combo PHYs                                                            */
+/* ====================================================================== */
+/* combphy0 (fe820000) —  sata0 和 usb_host0_xhci 共用                    */
+&combphy0 {
+	status = "okay";
+};
+
+/* combphy1 (fe830000) — sata1 使用 (PHY_TYPE_SATA) */
+&combphy1 {
+	status = "okay";
+};
+
+/* ====================================================================== */
+/*  PCIe                                                                  */
+/* ====================================================================== */
+/* combphy2 (fe840000) → PCIe 2.0 (无硬件) */
+// &combphy2 {
+// 	status = "okay";
+// };
+
+/* PCIe 2.0 x1(fe260000) -原厂启用，但无对应硬件接口
+ * 启用报：rockchip-dw-pcie 3c0000000.pcie: Phy link never came up  */
+// &pcie2x1 {
+// 	status = "okay";
+// 	pinctrl-names = "default";
+// 	pinctrl-0 = <&pcie20_reset_pin>;
+// 	reset-gpios = <&gpio3 RK_PC1 GPIO_ACTIVE_HIGH>;
+// 	vpcie3v3-supply = <&vcc3v3_sys>;
+// };
+
+/* pcie30phy(fe8c0000) → PCIe 3.0  */
 &pcie30phy {
 	data-lanes = <1 2>;
 	status = "okay";
 };
 
-/* --- USB 2.0 --- */
-&usb_host0_ehci { status = "okay"; };
-&usb_host0_ohci { status = "okay"; };
-&usb2phy0 { status = "okay"; };
+/* pcie3x2 (fe280000) -NVME SSD*/
+&pcie3x2 {
+	aspm-no-l0s;
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&pcie30_reset_pin>;
+	reset-gpios = <&gpio0 RK_PC6 GPIO_ACTIVE_HIGH>;
+	reset-assert-us = <10000>;    /* reset 保持 10ms */
+    reset-deassert-us = <10000>;  /* reset 释放后等待 10ms */
+	vpcie3v3-supply = <&vcc3v3_pcie>;
 
-&sdhci {
-	bus-width = <8>;
-	max-frequency = <200000000>;
-	supports-emmc;
-	non-removable;
-	mmc-hs200-1_8v;
-	vmmc-supply = <&vcc3v3_sys>;
+};
+
+/* ====================================================================== */
+/*  SATA      2个SATA接口                                                 */
+/* ====================================================================== */
+/* (fc000000) */
+&sata0 {
+    status = "okay";
+    ahci-supply = <&vcc_3v3>;
+    phy-supply = <&vcc_1v8>;
+};
+
+/* (fc400000) */
+&sata1 {
+    status = "okay";
+    ahci-supply = <&vcc_3v3>;
+    phy-supply = <&vcc_1v8>;
+};
+
+// FIX:
+// supply ahci not found, using dummy regulator
+// supply phy not found, using dummy regulator
+
+/* ====================================================================== */
+/*  USB                                                                   */
+/* ====================================================================== */
+/*
+ * 硬件连接（与正常固件 bdkj 对齐）：
+ *   USB 3.0 Type-A 口 → DWC3 OTG (fcc00000)
+ *   USB2.0 差分 → usb2phy0_otg (fe8a0000)
+ *   USB3.0 SS   → combphy0     (fe820000, PHY_TYPE_USB3)
+ *
+ *   combphy0 同时被 sata0 (PHY_TYPE_SATA) 和usb_host0_xhci (PHY_TYPE_USB3) 引用：
+ *   combphy0可能是分时复用，可以“同时”使用sata0和usb接口，也可能只能使用USB2.0
+ *启用内核编译 config:
+ *CONFIG_USB_DWC3_OF_SIMPLE=y    # 内置，开机即probe
+ *CONFIG_USB_DWC3_HOST=y
+ */
+/* (fe8a0000) */
+&usb2phy0 {
 	status = "okay";
 };
 
+&usb2phy0_host {
+	status = "okay";
+	phy-supply = <&vcc5v0_usb>;
+};
+
+&usb2phy0_otg {
+	status = "okay";
+	phy-supply = <&vcc5v0_usb>;
+};
+/* (fcc00000) */
+&usb_host0_xhci {
+	status = "okay";
+	dr_mode = "host";
+	/* USB2.0 → usb2phy0_otg; USB3.0 SS → combphy0 */
+	phys = <&usb2phy0_otg>, <&combphy0 PHY_TYPE_USB3>;
+	phy-names = "usb2-phy", "usb3-phy";
+	extcon = <&usb2phy0>;
+};
+
+/* usb2phy1(fe8b0000) 未连接到物理 USB 口，保持禁用（与厂家固件一致） */
+// &usb2phy1 {
+// 	status = "okay";
+// };
+
+// &usb2phy1_host {
+// 	phy-supply = <&vcc5v0_usb>;
+// 	status = "okay";
+// };
+
+// &usb2phy1_otg {
+// 	status = "okay";
+// };
+
+/* 原厂未启用前3项，启用EHCI/OHCI 日志报：
+* platform fd800000.usb: deferred probe pending
+* EHCI/OHCI 挂在 usb2phy1_otg 上，物理口未连接，禁用 
+*/
+// /* (fd800000) */
+// &usb_host0_ehci {
+// 	status = "okay";
+// };
+
+// /* (fd840000) */
+// &usb_host0_ohci {
+// 	status = "okay";
+// };
+
+/* ====================================================================== */
+/*  Ethernet                                                              */
+/* ====================================================================== */
+/*
+ * GMAC0(fe2a0000) — connected to RTL8365MB 5-port switch
+ * 4× LAN ports (lan1~lan4) + 1× CPU port (port7, fixed 1Gbps)
+ */
+&gmac0 {
+	assigned-clocks = <&cru SCLK_GMAC0_RX_TX>, <&cru CLK_MAC0_OUT>;
+	assigned-clock-parents = <&cru SCLK_GMAC0_RGMII_SPEED>;
+	assigned-clock-rates = <0>, <125000000>;
+	clock_in_out = "output";
+	phy-mode = "rgmii";
+	pinctrl-names = "default";
+	pinctrl-0 = <&gmac0_miim
+		     &gmac0_tx_bus2
+		     &gmac0_rx_bus2
+		     &gmac0_rgmii_clk
+		     &gmac0_rgmii_bus>;
+	tx_delay = <0x4f>;
+	rx_delay = <0x0f>;
+	status = "okay";
+
+	/* 无【fixed-link】会导致rtl8365mb-mdio stmmac-0报错，无法正常使用*/
+	fixed-link {
+		speed = <1000>;
+		full-duplex;
+	};
+};
+
+&mdio0 {
+	compatible = "snps,dwmac-mdio";
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	/* RTL8365MB 5-port switch */
+	switch@1d {
+		compatible = "realtek,rtl8365mb";
+		reg = <0x1d>;
+		reset-gpios = <&gpio0 RK_PA3 GPIO_ACTIVE_LOW>;
+		reset-delays-us = <0 10000 50000>;
+
+		switch_intc: interrupt-controller {
+			interrupt-controller;
+			#address-cells = <0>;
+			#interrupt-cells = <1>;
+			interrupt-parent = <&gpio0>;
+			interrupts = <RK_PA4 IRQ_TYPE_LEVEL_LOW>;
+		};
+
+		/*
+		 * 6.18 内核要求 switch 节点下显式声明内部 MDIO 总线
+		 * 及每个端口的 PHY，旧的隐式 1:1 映射已废弃。
+		 */
+		mdio {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			switch_phy0: ethernet-phy@0 {
+				reg = <0>;
+			};
+			switch_phy1: ethernet-phy@1 {
+				reg = <1>;
+			};
+			switch_phy2: ethernet-phy@2 {
+				reg = <2>;
+			};
+			switch_phy3: ethernet-phy@3 {
+				reg = <3>;
+			};
+		};
+
+		ports {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			port@0 {
+				reg = <0>;
+				label = "lan4";
+				phy-handle = <&switch_phy0>;
+			};
+
+			port@1 {
+				reg = <1>;
+				label = "lan3";
+				phy-handle = <&switch_phy1>;
+			};
+
+			port@2 {
+				reg = <2>;
+				label = "lan2";
+				phy-handle = <&switch_phy2>;
+			};
+
+			port@3 {
+				reg = <3>;
+				label = "lan1";
+				phy-handle = <&switch_phy3>;
+			};
+
+			port@7 {
+				reg = <7>;
+				label = "cpu";
+				ethernet = <&gmac0>;
+				phy-mode = "rgmii";
+
+				fixed-link {
+					speed = <1000>;
+					full-duplex;
+				};
+			};
+		};
+	};
+};
+
+/*
+ * GMAC1(fe010000) — direct RTL8211 PHY (1× WAN)
+ */
+&gmac1 {
+	assigned-clocks = <&cru SCLK_GMAC1_RX_TX>, <&cru CLK_MAC1_OUT>;
+	assigned-clock-parents = <&cru SCLK_GMAC1_RGMII_SPEED>;
+	assigned-clock-rates = <0>, <125000000>;
+	clock_in_out = "output";
+	phy-mode = "rgmii";
+	phy-handle = <&rgmii_phy1>;
+	phy-supply = <&vcc_3v3>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&gmac1m0_miim
+		     &gmac1m0_tx_bus2
+		     &gmac1m0_rx_bus2
+		     &gmac1m0_rgmii_clk
+		     &gmac1m0_rgmii_bus>;
+	snps,reset-gpio = <&gpio1 RK_PA6 GPIO_ACTIVE_LOW>;
+	snps,reset-active-low;
+	snps,reset-delays-us = <0 20000 100000>;
+	tx_delay = <0x4f>;
+	rx_delay = <0x0f>;
+	status = "okay";
+};
+
+&mdio1 {
+	rgmii_phy1: ethernet-phy@0 {
+		compatible = "ethernet-phy-id001c.c916",
+		             "ethernet-phy-ieee802.3-c22";
+		reg = <0>;
+		realtek,led-data = <0x17b>;
+
+/* "realtek,led-data" 默认不支持，需要给驱动添加 rtl821x_led_of_init 函数，否则【LED不亮】
+*===========================================================================*
+From ecbd3793bfe80ffd8aef67070800a04b0791e7e0 Mon Sep 17 00:00:00 2001
+From: cnb <50577371+icnbing@users.noreply.github.com>
+Date: Mon, 21 Sep 2026 21:41:30 +0800
+Subject: [PATCH] Update realtek_main.c
+
+add 	rtl821x_led_of_init for RTL8211F LED
+---
+ drivers/net/phy/realtek/realtek_main.c | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/drivers/net/phy/realtek/realtek_main.c b/drivers/net/phy/realtek/realtek_main.c
+index a4020160f1..8d757c6dee 100644
+--- a/drivers/net/phy/realtek/realtek_main.c
++++ b/drivers/net/phy/realtek/realtek_main.c
+@@ -345,6 +345,15 @@ static int rtl821x_modify_ext_page(struct phy_device *phydev, u16 ext_page,
+ 	return phy_restore_page(phydev, oldpage, ret);
+ }
+ 
++static void rtl821x_led_of_init(struct phy_device *phydev)
++{
++	struct device *dev = &phydev->mdio.dev;
++	u32 val;
++
++	if (!of_property_read_u32(dev->of_node, "realtek,led-data", &val))
++		phy_write_paged(phydev, 0xd04, 0x10, val);
++}
++
+ static int rtl821x_probe(struct phy_device *phydev)
+ {
+ 	struct device *dev = &phydev->mdio.dev;
+@@ -815,6 +824,8 @@ static int rtl8211f_config_init(struct phy_device *phydev)
+ 	if (ret)
+ 		return ret;
+ 
++	rtl821x_led_of_init(phydev);
++	
+ 	ret = rtl8211f_config_clk_out(phydev);
+ 	if (ret) {
+ 		dev_err(dev, "clkout configuration failed: %pe\n",
+*==========================================================================*/
+	};
+};
+
+/* ====================================================================== */
+/*  I2C0(fdd40000) — CPU voltage regulator (TCS4525)                      */
+/* ====================================================================== */
 &i2c0 {
 	status = "okay";
 
-	rk809: pmic@20 {
-		compatible = "rockchip,rk809";
-		reg = <0x20>;
-		interrupt-parent = <&gpio0>;
-		interrupts = <RK_PA3 IRQ_TYPE_LEVEL_LOW>;
-		pinctrl-names = "default", "pmic-sleep", "pmic-reset";
-		pinctrl-0 = <&pmic_int>;
-		pinctrl-1 = <&soc_slppin_slp>;
-		pinctrl-2 = <&soc_slppin_rst>;
+	vdd_cpu: regulator@1c {
+		compatible = "tcs,tcs4525";
+		reg = <0x1c>;
+		fcs,suspend-voltage-selector = <1>;
+		regulator-name = "vdd_cpu";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-init-microvolt = <900000>;
+		regulator-min-microvolt = <712500>;
+		regulator-max-microvolt = <1390000>;
+		regulator-ramp-delay = <2300>;
+		vin-supply = <&vcc3v3_sys>;
 
-		vcc1-supply = <&vcc3v3_sys>;
-		vcc2-supply = <&vcc3v3_sys>;
-		vcc3-supply = <&vcc3v3_sys>;
-		vcc4-supply = <&vcc3v3_sys>;
-		vcc5-supply = <&vcc3v3_sys>;
-		vcc6-supply = <&vcc3v3_sys>;
-		vcc7-supply = <&vcc3v3_sys>;
-		vcc8-supply = <&vcc3v3_sys>;
-		vcc9-supply = <&vcc3v3_sys>;
+		regulator-state-mem {
+			regulator-off-in-suspend;
+		};
+	};
 
-		regulators {
-			/* DCDC_REG1: Logic */
-			vdd_logic: DCDC_REG1 {
-				regulator-name = "vdd_logic";
-				regulator-always-on;
-				regulator-boot-on;
-				regulator-init-microvolt = <900000>;
-				regulator-min-microvolt = <500000>;
-				regulator-max-microvolt = <1350000>;
-				regulator-ramp-delay = <6001>;
-				regulator-initial-mode = <0x2>;
-				regulator-state-mem {
-					regulator-off-in-suspend;
-				};
+};
+
+/* ====================================================================== */
+/*  I2C3(fe5c0000) — board peripherals                                    */
+/* ====================================================================== */
+&i2c3 {
+	status = "okay";
+};
+
+/* ====================================================================== */
+/*  HDMI(fe0a0000)                                                        */
+/* ====================================================================== */
+&hdmi {
+	avdd-0v9-supply = <&vdda_0v9>;
+	avdd-1v8-supply = <&vcca_1v8>;
+	ddc-i2c-bus = <&i2c3>;		/* 与 hdmi-con 保持一致 */
+	status = "okay";
+
+	ports {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		/* port@0 = 输入：从 VOP0 收视频数据 */
+		port@0 {
+			reg = <0>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			hdmi_in_vp0: endpoint@0 {
+				reg = <0>;
+				remote-endpoint = <&vp0_out_hdmi>;
 			};
+		};
 
-			/* DCDC_REG2: GPU */
-			vdd_gpu: DCDC_REG2 {
-				regulator-name = "vdd_gpu";
-				regulator-always-on;
-				regulator-init-microvolt = <900000>;
-				regulator-min-microvolt = <500000>;
-				regulator-max-microvolt = <1350000>;
-				regulator-ramp-delay = <6001>;
-				regulator-initial-mode = <0x2>;
-				regulator-state-mem {
-					regulator-off-in-suspend;
-				};
-			};
+		/* port@1 = 输出：送到 HDMI 连接器 */
+		port@1 {
+			reg = <1>;
+			#address-cells = <1>;
+			#size-cells = <0>;
 
-			/* DCDC_REG3: DDR */
-			vcc_ddr: DCDC_REG3 {
-				regulator-name = "vcc_ddr";
-				regulator-always-on;
-				regulator-boot-on;
-				regulator-initial-mode = <0x2>;
-				regulator-state-mem {
-					regulator-on-in-suspend;
-				};
-			};
-
-			/* DCDC_REG4: NPU */
-			vdd_npu: DCDC_REG4 {
-				regulator-name = "vdd_npu";
-				regulator-min-microvolt = <500000>;
-				regulator-max-microvolt = <1350000>;
-				regulator-initial-mode = <0x2>;
-				regulator-state-mem {
-					regulator-off-in-suspend;
-				};
-			};
-
-			/* DCDC_REG5: 1.8V IO */
-			vcc_1v8: DCDC_REG5 {
-				regulator-name = "vcc_1v8";
-				regulator-always-on;
-				regulator-boot-on;
-				regulator-min-microvolt = <1800000>;
-				regulator-max-microvolt = <1800000>;
-				regulator-state-mem {
-					regulator-on-in-suspend;
-					regulator-suspend-microvolt = <1800000>;
-				};
-			};
-
-			/* LDO_REG1: PMU 1.8V */
-			vcca_1v8_pmu: LDO_REG1 {
-				regulator-name = "vcca_1v8_pmu";
-				regulator-always-on;
-				regulator-boot-on;
-				regulator-min-microvolt = <1800000>;
-				regulator-max-microvolt = <1800000>;
-				regulator-state-mem {
-					regulator-on-in-suspend;
-					regulator-suspend-microvolt = <1800000>;
-				};
-			};
-
-			/* LDO_REG2: PMU 3.3V */
-			vcc3v3_pmu: LDO_REG2 {
-				regulator-name = "vcc3v3_pmu";
-				regulator-always-on;
-				regulator-boot-on;
-				regulator-min-microvolt = <3300000>;
-				regulator-max-microvolt = <3300000>;
-				regulator-state-mem {
-					regulator-on-in-suspend;
-					regulator-suspend-microvolt = <3300000>;
-				};
-			};
-
-			vcca_0v9: LDO_REG3 {
-				regulator-name = "vcca_0v9";
-				regulator-always-on;
-				regulator-boot-on;
-				regulator-min-microvolt = <900000>;
-				regulator-max-microvolt = <900000>;
-				regulator-state-mem {
-					regulator-on-in-suspend;
-					regulator-suspend-microvolt = <900000>;
-				};
+			hdmi_out_con: endpoint@0 {
+				reg = <0>;
+				remote-endpoint = <&hdmi_con_in>;
 			};
 		};
 	};
 };
 
-&pinctrl {
-	leds {
-		led_pins: led-pins {
-			rockchip,pins = <4 RK_PB3 RK_FUNC_GPIO &pcfg_pull_none>,
-			                <4 RK_PB1 RK_FUNC_GPIO &pcfg_pull_none>;
+&hdmi_sound {
+	status = "okay";
+};
+
+/* ====================================================================== */
+/*  VOP (fe040000)   --视频输出处理                                        */
+/* ====================================================================== */
+&vop {
+	compatible = "rockchip,rk3568-vop";
+	assigned-clocks = <&cru DCLK_VOP0>, <&cru DCLK_VOP1>;
+	assigned-clock-parents = <&pmucru PLL_HPLL>, <&cru CLK_RTC_32K>;
+	status = "okay";
+};
+
+&vp0 {
+	vp0_out_hdmi: endpoint@ROCKCHIP_VOP2_EP_HDMI0 {
+		reg = <ROCKCHIP_VOP2_EP_HDMI0>;
+		remote-endpoint = <&hdmi_in_vp0>;
+	};
+};
+
+&vop_mmu {
+	status = "okay";
+};
+
+/* ====================================================================== */
+/*  Audio (I2S0 → HDMI)  (fe400000)                                       */
+/* ====================================================================== */
+&i2s0_8ch {
+	#sound-dai-cells = <0>;
+	status = "okay";
+};
+
+/* ====================================================================== */
+/*  PWM regulators   (fe6e0000/fe6e0010) 脉冲宽度调制器                    */
+/* ====================================================================== */
+&pwm4 {
+	status = "okay";
+};
+
+&pwm5 {
+	status = "okay";
+};
+
+/* ====================================================================== */
+/*  Thermal / TSADC (fe710000)   -温度传感器                               */
+/* ====================================================================== */
+&tsadc {
+	rockchip,hw-tshut-mode = <1>;    /* CRU reset */
+	rockchip,hw-tshut-polarity = <0>;/* active low */
+	status = "okay";
+};
+
+&cpu_thermal {
+
+	trips {
+		cpu_trip_active_low: cpu-trip-active-low {
+			temperature = <55000>;
+			hysteresis = <2000>;
+			type = "active";
+		};
+
+		cpu_trip_active_med: cpu-trip-active-med {
+			temperature = <70000>;
+			hysteresis = <2000>;
+			type = "active";
+		};
+
+		cpu_trip_active_high: cpu-trip-active-high {
+			temperature = <85000>;
+			hysteresis = <2000>;
+			type = "hot";
 		};
 	};
+
+	cooling-maps {
+
+		cpu-active-low {
+			cooling-device = <&bfan 1 1>;
+			trip = <&cpu_trip_active_low>;
+		};
+
+		cpu-active-med {
+			cooling-device = <&bfan 1 1>;
+			trip = <&cpu_trip_active_med>;
+		};
+
+		cpu-active-high {
+			cooling-device = <&bfan 1 1>;
+			trip = <&cpu_trip_active_high>;
+		};
+	};
+};
+
+/* ====================================================================== */
+/*  SARADC (fe720000)  Rest/Recovery 按键                                 */
+/* ====================================================================== */
+&saradc {
+	vref-supply = <&vcca_1v8>;
+	status = "okay";
+};
+
+/* ====================================================================== */
+/*  Crypto / RNG                                                          */
+/* ====================================================================== */
+// rk3568-crypto.dtsi中已启用。
+// &crypto {
+// 	status = "okay";
+// };
+
+// &rng {
+// 	status = "okay";
+// };
+
+/* ====================================================================== */
+/*  IO Domains (PMU GRF)                                                  */
+/* ====================================================================== */
+&pmu_io_domains {
+	compatible = "rockchip,rk3568-pmu-io-voltage-domain";
+	status = "okay";
+	pmuio1-supply = <&vcc_3v3>;
+	pmuio2-supply = <&vcc_3v3>;
+	vccio1-supply = <&vcc_3v3>;
+	vccio2-supply = <&vcc_1v8>;
+	vccio3-supply = <&vcc_3v3>;
+	vccio4-supply = <&vcc_3v3>;
+	vccio5-supply = <&vcc_3v3>;
+	vccio6-supply = <&vcc_3v3>;
+	vccio7-supply = <&vcc_3v3>;
+};
+
+/* ====================================================================== */
+/*  UART2 — debug console                                                 */
+/* ====================================================================== */
+&uart2 {
+	status = "okay";
+};
+
+/* ====================================================================== */
+/*  VPU —fix:power domain sync_state() pending due to fdea0000.video-codec*/
+/* ====================================================================== */
+&vpu { status = "disabled"; };
+&vdec { status = "disabled"; };
+&vepu { status = "disabled"; };
+
+/* ====================================================================== */
+/*  Pinctrl additions                                                     */
+/* ====================================================================== */
+&pinctrl {
+
 	fan {
 		fan_pins: fan-pins {
 			rockchip,pins = <4 RK_PA7 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
 	};
-	pcie {
-		pcie30_pwr_pin: pcie30-pwr-pin {
-			rockchip,pins = <0 RK_PC0 RK_FUNC_GPIO &pcfg_pull_none>;
+
+	gpio-leds {
+		power_led_pin: power-led-pin {
+			rockchip,pins = <4 RK_PB3 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+
+		status_led_pin: status-led-pin {
+			rockchip,pins = <4 RK_PB1 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
 	};
-	pmic {
-		pmic_int: pmic-int {
-			rockchip,pins = <0 RK_PA3 RK_FUNC_GPIO &pcfg_pull_up>;
+
+	pcie20 {
+		pcie20_reset_pin: pcie20-reset-pin {
+			rockchip,pins = <3 RK_PC1 RK_FUNC_GPIO &pcfg_pull_down>;
 		};
-		soc_slppin_slp: soc-slppin-slp {
-			rockchip,pins = <0 RK_PA2 1 &pcfg_pull_none>;
+	};
+
+	pcie30 {
+		pcie30_reset_pin: pcie30-reset-pin {
+			rockchip,pins = <0 RK_PC6 RK_FUNC_GPIO &pcfg_pull_down>;
 		};
-		soc_slppin_rst: soc-slppin-rst {
-			rockchip,pins = <0 RK_PA2 2 &pcfg_pull_none>;
+
+		ssd_pwr_en: ssd-pwr-en {
+			rockchip,pins = <0 RK_PC0 RK_FUNC_GPIO &pcfg_pull_down>;
+		};
+	};
+
+	usb {
+		usb_pwr_en: usb-pwr-en {
+			rockchip,pins = <0 RK_PC1 RK_FUNC_GPIO &pcfg_pull_down>;
 		};
 	};
 };
-
-&saradc {
-	status = "okay";
-	vref-supply = <&vcca_1v8_pmu>; 
-};
-
-&cpu_thermal {
-	trips {
-		cpu_active: cpu-active {
-			temperature = <55000>;
-			hysteresis = <2000>;
-			type = "active";
-		};
-	};
-	cooling-maps {
-		map1 {
-			trip = <&cpu_active>;
-			cooling-device = <&fan THERMAL_NO_LIMIT THERMAL_NO_LIMIT>;
-		};
-	};
-};
-
-&uart2 { status = "okay"; };
