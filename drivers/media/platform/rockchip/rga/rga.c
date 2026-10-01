@@ -885,7 +885,7 @@ static void rga_remove(struct platform_device *pdev)
 	pm_runtime_disable(rga->dev);
 }
 
-static int __maybe_unused rga_runtime_suspend(struct device *dev)
+static int rga_runtime_suspend(struct device *dev)
 {
 	struct rockchip_rga *rga = dev_get_drvdata(dev);
 
@@ -894,7 +894,7 @@ static int __maybe_unused rga_runtime_suspend(struct device *dev)
 	return 0;
 }
 
-static int __maybe_unused rga_runtime_resume(struct device *dev)
+static int rga_runtime_resume(struct device *dev)
 {
 	struct rockchip_rga *rga = dev_get_drvdata(dev);
 
@@ -902,8 +902,7 @@ static int __maybe_unused rga_runtime_resume(struct device *dev)
 }
 
 static const struct dev_pm_ops rga_pm = {
-	SET_RUNTIME_PM_OPS(rga_runtime_suspend,
-			   rga_runtime_resume, NULL)
+	RUNTIME_PM_OPS(rga_runtime_suspend, rga_runtime_resume, NULL)
 };
 
 static const struct of_device_id rockchip_rga_match[] = {
@@ -929,7 +928,7 @@ static struct platform_driver rga_pdrv = {
 	.remove = rga_remove,
 	.driver = {
 		.name = RGA_NAME,
-		.pm = &rga_pm,
+		.pm = pm_ptr(&rga_pm),
 		.of_match_table = rockchip_rga_match,
 	},
 };
