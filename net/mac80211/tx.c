@@ -2610,7 +2610,7 @@ static inline bool ieee80211_is_tdls_setup(struct sk_buff *skb)
 	u16 ethertype = (skb->data[12] << 8) | skb->data[13];
 
 	return ethertype == ETH_P_TDLS &&
-	       skb->len > 14 &&
+	       skb_headlen(skb) > 14 &&
 	       skb->data[14] == WLAN_TDLS_SNAP_RFTYPE;
 }
 
