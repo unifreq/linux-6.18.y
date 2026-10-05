@@ -2475,7 +2475,9 @@ netdev_tx_t ieee80211_monitor_start_xmit(struct sk_buff *skb,
 	hdr = (struct ieee80211_hdr *)(skb->data + len_rthdr);
 	hdrlen = ieee80211_hdrlen(hdr->frame_control);
 
-	if (skb_headlen(skb) < len_rthdr + hdrlen)
+	if (skb_headlen(skb) < len_rthdr +
+			       max_t(int, hdrlen,
+				     offsetofend(struct ieee80211_hdr, addr1)))
 		goto fail;
 
 	/*
@@ -2509,7 +2511,8 @@ netdev_tx_t ieee80211_monitor_start_xmit(struct sk_buff *skb,
 		if (tmp_sdata->vif.type == NL80211_IFTYPE_MONITOR ||
 		    tmp_sdata->vif.type == NL80211_IFTYPE_AP_VLAN)
 			continue;
-		if (ether_addr_equal(tmp_sdata->vif.addr, hdr->addr2)) {
+		if (hdrlen >= offsetofend(struct ieee80211_hdr, addr2) &&
+		    ether_addr_equal(tmp_sdata->vif.addr, hdr->addr2)) {
 			sdata = tmp_sdata;
 			break;
 		}
