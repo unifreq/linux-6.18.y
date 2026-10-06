@@ -9809,6 +9809,7 @@ void cfg80211_cqm_beacon_loss_notify(struct net_device *dev, gfp_t gfp);
  * @gfp: context flags
  *
  * This function is called when a radar is detected on the current chanenl.
+ * Must be called with the wiphy mutex held.
  */
 void __cfg80211_radar_event(struct wiphy *wiphy,
 			    struct cfg80211_chan_def *chandef,
@@ -9854,7 +9855,7 @@ void cfg80211_sta_opmode_change_notify(struct net_device *dev, const u8 *mac,
  *
  * This function is called when a Channel availability check (CAC) is finished
  * or aborted. This must be called to notify the completion of a CAC process,
- * also by full-MAC drivers.
+ * also by full-MAC drivers. Must be called with the wiphy mutex held.
  */
 void cfg80211_cac_event(struct net_device *netdev,
 			const struct cfg80211_chan_def *chandef,
