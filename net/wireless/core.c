@@ -57,13 +57,13 @@ module_param(cfg80211_disable_40mhz_24ghz, bool, 0644);
 MODULE_PARM_DESC(cfg80211_disable_40mhz_24ghz,
 		 "Disable 40MHz support in the 2.4GHz band");
 
+/* requires RCU or rtnl */
 struct cfg80211_registered_device *cfg80211_rdev_by_wiphy_idx(int wiphy_idx)
 {
 	struct cfg80211_registered_device *result = NULL, *rdev;
 
-	ASSERT_RTNL();
-
-	for_each_rdev(rdev) {
+	list_for_each_entry_rcu(rdev, &cfg80211_rdev_list, list,
+				lockdep_rtnl_is_held()) {
 		if (rdev->wiphy_idx == wiphy_idx) {
 			result = rdev;
 			break;
