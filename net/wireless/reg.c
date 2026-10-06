@@ -2541,7 +2541,7 @@ static void reg_check_chans_work(struct work_struct *work)
 
 	rcu_read_lock();
 
-	list_for_each_entry_rcu(rdev, &cfg80211_rdev_list, list)
+	for_each_rdev(rdev)
 		wiphy_work_queue(&rdev->wiphy, &rdev->reg_check_chans_wk);
 
 	rcu_read_unlock();

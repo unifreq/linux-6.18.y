@@ -63,7 +63,7 @@ static const struct genl_multicast_group nl80211_mcgrps[] = {
 #endif
 };
 
-/* returns ERR_PTR values, requires RCU or rtnl if rdev is %NULL */
+/* returns ERR_PTR values, requires RCU/cfg80211_mutex/RTNL if rdev is %NULL */
 static struct wireless_dev *
 __cfg80211_wdev_from_attrs(struct cfg80211_registered_device *rdev,
 			   struct net *netns, struct nlattr **attrs)
@@ -105,8 +105,7 @@ __cfg80211_wdev_from_attrs(struct cfg80211_registered_device *rdev,
 		return result ?: ERR_PTR(-ENODEV);
 	}
 
-	list_for_each_entry_rcu(rdev, &cfg80211_rdev_list, list,
-				lockdep_rtnl_is_held()) {
+	for_each_rdev(rdev) {
 		struct wireless_dev *wdev;
 
 		if (wiphy_net(&rdev->wiphy) != netns)
@@ -137,7 +136,7 @@ __cfg80211_wdev_from_attrs(struct cfg80211_registered_device *rdev,
 	return ERR_PTR(-ENODEV);
 }
 
-/* requires RCU or rtnl */
+/* requires RCU/cfg80211_mutex/RTNL */
 static struct cfg80211_registered_device *
 __cfg80211_rdev_from_attrs(struct net *netns, struct nlattr **attrs)
 {
@@ -10955,7 +10954,7 @@ static int nl80211_get_reg_dump(struct sk_buff *skb,
 
 	/* the global regdom is idx 0 */
 	reg_idx = 1;
-	list_for_each_entry_rcu(rdev, &cfg80211_rdev_list, list) {
+	for_each_rdev(rdev) {
 		regdom = get_wiphy_regdom(&rdev->wiphy);
 		if (!regdom)
 			continue;
@@ -23468,7 +23467,7 @@ static int nl80211_netlink_notify(struct notifier_block * nb,
 
 	rcu_read_lock();
 
-	list_for_each_entry_rcu(rdev, &cfg80211_rdev_list, list) {
+	for_each_rdev(rdev) {
 		struct cfg80211_sched_scan_request *sched_scan_req;
 
 		list_for_each_entry_rcu(sched_scan_req,
