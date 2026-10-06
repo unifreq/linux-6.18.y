@@ -42,7 +42,9 @@ MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("wireless configuration support");
 MODULE_ALIAS_GENL_FAMILY(NL80211_GENL_NAME);
 
-/* RCU-protected (and RTNL for writers) */
+DEFINE_MUTEX(cfg80211_mutex);
+
+/* RCU-protected (writes under both RTNL/cfg80211_mutex) */
 LIST_HEAD(cfg80211_rdev_list);
 int cfg80211_rdev_list_generation;
 
@@ -565,11 +567,13 @@ static void cfg80211_propagate_radar_detect_wk(struct work_struct *work)
 			    propagate_radar_detect_wk);
 
 	rtnl_lock();
+	mutex_lock(&cfg80211_mutex);
 
 	regulatory_propagate_dfs_state(&rdev->wiphy, &rdev->radar_chandef,
 				       NL80211_DFS_UNAVAILABLE,
 				       NL80211_RADAR_DETECTED);
 
+	mutex_unlock(&cfg80211_mutex);
 	rtnl_unlock();
 }
 
@@ -581,11 +585,13 @@ static void cfg80211_propagate_cac_done_wk(struct work_struct *work)
 			    propagate_cac_done_wk);
 
 	rtnl_lock();
+	mutex_lock(&cfg80211_mutex);
 
 	regulatory_propagate_dfs_state(&rdev->wiphy, &rdev->cac_done_chandef,
 				       NL80211_DFS_AVAILABLE,
 				       NL80211_RADAR_CAC_FINISHED);
 
+	mutex_unlock(&cfg80211_mutex);
 	rtnl_unlock();
 }
 
@@ -1244,10 +1250,12 @@ int wiphy_register(struct wiphy *wiphy)
 		rdev->wiphy.bss_param_support |= WIPHY_BSS_PARAM_P2P_OPPPS;
 
 	rtnl_lock();
+	mutex_lock(&cfg80211_mutex);
 	wiphy_lock(&rdev->wiphy);
 	res = device_add(&rdev->wiphy.dev);
 	if (res) {
 		wiphy_unlock(&rdev->wiphy);
+		mutex_unlock(&cfg80211_mutex);
 		rtnl_unlock();
 		return res;
 	}
@@ -1321,6 +1329,7 @@ int wiphy_register(struct wiphy *wiphy)
 				break;
 		}
 	}
+	mutex_unlock(&cfg80211_mutex);
 	rtnl_unlock();
 
 	res = rfkill_register(rdev->wiphy.rfkill);
@@ -1392,6 +1401,7 @@ void wiphy_unregister(struct wiphy *wiphy)
 		rfkill_unregister(rdev->wiphy.rfkill);
 
 	rtnl_lock();
+	mutex_lock(&cfg80211_mutex);
 	wiphy_lock(&rdev->wiphy);
 	nl80211_notify_wiphy(rdev, NL80211_CMD_DEL_WIPHY);
 	rdev->wiphy.registered = false;
@@ -1423,6 +1433,7 @@ void wiphy_unregister(struct wiphy *wiphy)
 	/* surely nothing is reachable now, clean up work */
 	cfg80211_process_wiphy_works(rdev, NULL);
 	wiphy_unlock(&rdev->wiphy);
+	mutex_unlock(&cfg80211_mutex);
 	rtnl_unlock();
 
 	/* this has nothing to do now but make sure it's gone */

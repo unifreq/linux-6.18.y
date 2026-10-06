@@ -19,6 +19,9 @@
 #include "reg.h"
 
 
+/* protects the wiphy list and regulatory state */
+extern struct mutex cfg80211_mutex;
+
 #define WIPHY_IDX_INVALID	-1
 
 struct cfg80211_scan_request_int {
