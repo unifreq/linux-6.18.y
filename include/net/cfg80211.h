@@ -8198,6 +8198,8 @@ void wiphy_apply_custom_regulatory(struct wiphy *wiphy,
  * it wants to follow we respect that unless a country IE has been received
  * and processed already.
  *
+ * Must be called within an RCU read-side critical section.
+ *
  * Return: A valid pointer, or, when an error occurs, for example if no rule
  * can be found, the return value is encoded using ERR_PTR(). Use IS_ERR() to
  * check and PTR_ERR() to obtain the numeric return value. The numeric return
