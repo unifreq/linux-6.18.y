@@ -1304,6 +1304,8 @@ static int nl80211_prepare_wdev_dump(struct netlink_callback *cb,
 				     struct wireless_dev **wdev,
 				     struct nlattr **attrbuf)
 {
+	struct net *netns = sock_net(cb->skb->sk);
+	u32 wdev_id;
 	int err;
 
 	if (!cb->args[0]) {
@@ -1326,60 +1328,37 @@ static int nl80211_prepare_wdev_dump(struct netlink_callback *cb,
 			return err;
 		}
 
-		rtnl_lock();
-		*wdev = __cfg80211_wdev_from_attrs(NULL, sock_net(cb->skb->sk),
-						   attrbuf);
+		rcu_read_lock();
+		*wdev = __cfg80211_wdev_from_attrs(NULL, netns, attrbuf);
 		kfree(attrbuf_free);
 		if (IS_ERR(*wdev)) {
-			rtnl_unlock();
+			rcu_read_unlock();
 			return PTR_ERR(*wdev);
 		}
 		*rdev = wiphy_to_rdev((*wdev)->wiphy);
-		mutex_lock(&(*rdev)->wiphy.mtx);
-		rtnl_unlock();
-		/* 0 is the first index - add 1 to parse only once */
-		cb->args[0] = (*rdev)->wiphy_idx + 1;
-		cb->args[1] = (*wdev)->identifier;
+		wdev_id = (*wdev)->identifier;
 	} else {
 		/* subtract the 1 again here */
-		struct wiphy *wiphy;
-		struct wireless_dev *tmp;
-
-		rtnl_lock();
-		wiphy = wiphy_idx_to_wiphy(cb->args[0] - 1);
-		if (!wiphy) {
-			rtnl_unlock();
+		rcu_read_lock();
+		*rdev = cfg80211_rdev_by_wiphy_idx(cb->args[0] - 1);
+		if (!*rdev) {
+			rcu_read_unlock();
 			return -ENODEV;
 		}
-
-		/*
-		 * The first invocation validated the wdev's netns against
-		 * the caller via __cfg80211_wdev_from_attrs(). The wiphy
-		 * may have moved netns between dumpit invocations (via
-		 * NL80211_CMD_SET_WIPHY_NETNS), so re-check here.
-		 */
-		if (!net_eq(wiphy_net(wiphy), sock_net(cb->skb->sk))) {
-			rtnl_unlock();
-			return -ENODEV;
-		}
-
-		*rdev = wiphy_to_rdev(wiphy);
-		*wdev = NULL;
-
-		list_for_each_entry(tmp, &(*rdev)->wiphy.wdev_list, list) {
-			if (tmp->identifier == cb->args[1]) {
-				*wdev = tmp;
-				break;
-			}
-		}
-
-		if (!*wdev) {
-			rtnl_unlock();
-			return -ENODEV;
-		}
-		mutex_lock(&(*rdev)->wiphy.mtx);
-		rtnl_unlock();
+		wdev_id = cb->args[1];
 	}
+
+	get_device(&(*rdev)->wiphy.dev);
+	rcu_read_unlock();
+
+	/* things may have changed since the lookup or the last dumpit call */
+	*wdev = nl80211_lock_and_recheck(*rdev, netns, wdev_id);
+	if (IS_ERR(*wdev))
+		return PTR_ERR(*wdev);
+
+	/* 0 is the first index - add 1 to parse only once */
+	cb->args[0] = (*rdev)->wiphy_idx + 1;
+	cb->args[1] = wdev_id;
 
 	return 0;
 }
