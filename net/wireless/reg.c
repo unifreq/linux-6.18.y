@@ -2153,31 +2153,32 @@ static void reg_call_notifier(struct wiphy *wiphy,
 		wiphy->reg_notifier(wiphy, request);
 }
 
-static void handle_reg_beacon(struct wiphy *wiphy, unsigned int chan_idx,
+static bool handle_reg_beacon(struct wiphy *wiphy, unsigned int chan_idx,
 			      struct reg_beacon *reg_beacon)
 {
 	struct ieee80211_supported_band *sband;
 	struct ieee80211_channel *chan;
 	bool channel_changed = false;
 	struct ieee80211_channel chan_before;
-	struct regulatory_request *lr = get_last_request();
+
+	lockdep_assert_wiphy(wiphy);
 
 	sband = wiphy->bands[reg_beacon->chan.band];
 	chan = &sband->channels[chan_idx];
 
 	if (likely(!ieee80211_channel_equal(chan, &reg_beacon->chan)))
-		return;
+		return false;
 
 	if (chan->beacon_found)
-		return;
+		return false;
 
 	chan->beacon_found = true;
 
 	if (!reg_is_world_roaming(wiphy))
-		return;
+		return false;
 
 	if (wiphy->regulatory_flags & REGULATORY_DISABLE_BEACON_HINTS)
-		return;
+		return false;
 
 	chan_before = *chan;
 
@@ -2186,11 +2187,10 @@ static void handle_reg_beacon(struct wiphy *wiphy, unsigned int chan_idx,
 		channel_changed = true;
 	}
 
-	if (channel_changed) {
+	if (channel_changed)
 		nl80211_send_beacon_hint_event(wiphy, &chan_before, chan);
-		if (wiphy->flags & WIPHY_FLAG_CHANNEL_CHANGE_ON_BEACON)
-			reg_call_notifier(wiphy, lr);
-	}
+
+	return channel_changed;
 }
 
 /*
@@ -2202,14 +2202,20 @@ static void wiphy_update_new_beacon(struct wiphy *wiphy,
 {
 	unsigned int i;
 	struct ieee80211_supported_band *sband;
+	bool changed = false;
 
 	if (!wiphy->bands[reg_beacon->chan.band])
 		return;
 
 	sband = wiphy->bands[reg_beacon->chan.band];
 
-	for (i = 0; i < sband->n_channels; i++)
-		handle_reg_beacon(wiphy, i, reg_beacon);
+	scoped_guard(wiphy, wiphy) {
+		for (i = 0; i < sband->n_channels; i++)
+			changed |= handle_reg_beacon(wiphy, i, reg_beacon);
+	}
+
+	if (changed && wiphy->flags & WIPHY_FLAG_CHANNEL_CHANGE_ON_BEACON)
+		reg_call_notifier(wiphy, get_last_request());
 }
 
 /*
@@ -2554,11 +2560,15 @@ static void wiphy_update_regulatory(struct wiphy *wiphy,
 
 	lr->dfs_region = get_cfg80211_regdom()->dfs_region;
 
-	for (band = 0; band < NUM_NL80211_BANDS; band++)
-		handle_band(wiphy, initiator, wiphy->bands[band]);
+	/* the notifier is called below, so ignore beacon hint changes */
+	scoped_guard(wiphy, wiphy) {
+		for (band = 0; band < NUM_NL80211_BANDS; band++)
+			handle_band(wiphy, initiator, wiphy->bands[band]);
 
-	reg_process_beacons(wiphy);
-	reg_process_ht_flags(wiphy);
+		reg_process_beacons(wiphy);
+		reg_process_ht_flags(wiphy);
+	}
+
 	reg_call_notifier(wiphy, lr);
 }
 
@@ -3174,12 +3184,14 @@ static void reg_process_pending_beacon_hints(void)
 {
 	struct cfg80211_registered_device *rdev;
 	struct reg_beacon *pending_beacon, *tmp;
+	LIST_HEAD(pending);
 
 	/* This goes through the _pending_ beacon list */
 	spin_lock_bh(&reg_pending_beacons_lock);
+	list_splice_tail_init(&reg_pending_beacons, &pending);
+	spin_unlock_bh(&reg_pending_beacons_lock);
 
-	list_for_each_entry_safe(pending_beacon, tmp,
-				 &reg_pending_beacons, list) {
+	list_for_each_entry_safe(pending_beacon, tmp, &pending, list) {
 		list_del_init(&pending_beacon->list);
 
 		/* Applies the beacon hint to current wiphys */
@@ -3189,8 +3201,6 @@ static void reg_process_pending_beacon_hints(void)
 		/* Remembers the beacon hint for new wiphys or reg changes */
 		list_add_tail(&pending_beacon->list, &reg_beacon_list);
 	}
-
-	spin_unlock_bh(&reg_pending_beacons_lock);
 }
 
 static void reg_process_self_managed_hint(struct wiphy *wiphy)
@@ -3581,8 +3591,11 @@ static void restore_regulatory_settings(bool reset_user, bool cached)
 	for_each_rdev(rdev) {
 		if (rdev->wiphy.regulatory_flags & REGULATORY_WIPHY_SELF_MANAGED)
 			continue;
-		if (rdev->wiphy.regulatory_flags & REGULATORY_CUSTOM_REG)
+		if (rdev->wiphy.regulatory_flags & REGULATORY_CUSTOM_REG) {
+			guard(wiphy)(&rdev->wiphy);
+
 			restore_custom_reg_settings(&rdev->wiphy);
+		}
 	}
 
 	if (cached && (!is_an_alpha2(alpha2) ||
