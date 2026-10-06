@@ -129,20 +129,18 @@ static void reg_process_hint(struct regulatory_request *reg_request);
 static const struct ieee80211_regdomain *get_cfg80211_regdom(void)
 {
 	return rcu_dereference_check(cfg80211_regdomain,
-				     lockdep_is_held(&cfg80211_mutex) ||
-				     lockdep_rtnl_is_held());
+				     lockdep_is_held(&cfg80211_mutex));
 }
 
 /*
  * Returns the regulatory domain associated with the wiphy.
  *
- * Requires any of RTNL, wiphy mutex or RCU protection.
+ * Requires the wiphy mutex or RCU protection.
  */
 const struct ieee80211_regdomain *get_wiphy_regdom(struct wiphy *wiphy)
 {
 	return rcu_dereference_check(wiphy->regd,
-				     lockdep_is_held(&wiphy->mtx) ||
-				     lockdep_rtnl_is_held());
+				     lockdep_is_held(&wiphy->mtx));
 }
 EXPORT_SYMBOL(get_wiphy_regdom);
 
@@ -207,8 +205,7 @@ static void rcu_free_regdom(const struct ieee80211_regdomain *r)
 static struct regulatory_request *get_last_request(void)
 {
 	return rcu_dereference_check(last_request,
-				     lockdep_is_held(&cfg80211_mutex) ||
-				     lockdep_rtnl_is_held());
+				     lockdep_is_held(&cfg80211_mutex));
 }
 
 /* Used to queue up regulatory hints */
@@ -480,7 +477,6 @@ static void reg_regdb_apply(struct work_struct *work)
 {
 	struct reg_regdb_apply_request *request;
 
-	rtnl_lock();
 	mutex_lock(&cfg80211_mutex);
 
 	mutex_lock(&reg_regdb_apply_mutex);
@@ -496,7 +492,6 @@ static void reg_regdb_apply(struct work_struct *work)
 	mutex_unlock(&reg_regdb_apply_mutex);
 
 	mutex_unlock(&cfg80211_mutex);
-	rtnl_unlock();
 }
 
 static DECLARE_WORK(reg_regdb_work, reg_regdb_apply);
@@ -533,12 +528,10 @@ static DECLARE_DELAYED_WORK(crda_timeout, crda_timeout_work);
 static void crda_timeout_work(struct work_struct *work)
 {
 	pr_debug("Timeout while waiting for CRDA to reply, restoring regulatory settings\n");
-	rtnl_lock();
 	mutex_lock(&cfg80211_mutex);
 	reg_crda_timeouts++;
 	restore_regulatory_settings(true, false);
 	mutex_unlock(&cfg80211_mutex);
-	rtnl_unlock();
 }
 
 static void cancel_crda_timeout(void)
@@ -987,7 +980,6 @@ static int query_regdb(const char *alpha2)
 	const struct fwdb_header *regdb;
 
 	regdb = rcu_dereference_protected(global_regdb,
-					  lockdep_rtnl_is_held() ||
 					  lockdep_is_held(&cfg80211_mutex));
 
 	if (IS_ERR(regdb))
@@ -1018,10 +1010,8 @@ static void regdb_fw_cb(const struct firmware *fw, void *context)
 		set_error = -EINVAL;
 	}
 
-	rtnl_lock();
 	mutex_lock(&cfg80211_mutex);
 	regdb = rcu_dereference_protected(global_regdb,
-					  lockdep_rtnl_is_held() ||
 					  lockdep_is_held(&cfg80211_mutex));
 	if (regdb && !IS_ERR(regdb)) {
 		/* negative case - a bug
@@ -1046,7 +1036,6 @@ static void regdb_fw_cb(const struct firmware *fw, void *context)
 		restore_regulatory_settings(true, false);
 
 	mutex_unlock(&cfg80211_mutex);
-	rtnl_unlock();
 
 	kfree(context);
 
@@ -1100,10 +1089,8 @@ int reg_reload_regdb(void)
 		goto out;
 	}
 
-	rtnl_lock();
 	mutex_lock(&cfg80211_mutex);
 	old = rcu_replace_pointer(global_regdb, db,
-				  lockdep_rtnl_is_held() ||
 				  lockdep_is_held(&cfg80211_mutex));
 
 	/* reset regulatory domain */
@@ -1125,7 +1112,6 @@ int reg_reload_regdb(void)
 
 out_unlock:
 	mutex_unlock(&cfg80211_mutex);
-	rtnl_unlock();
 
 	if (!IS_ERR_OR_NULL(old)) {
 		synchronize_rcu();
@@ -2169,6 +2155,8 @@ static bool reg_is_world_roaming(struct wiphy *wiphy)
 static void reg_call_notifier(struct wiphy *wiphy,
 			      struct regulatory_request *request)
 {
+	lockdep_assert_wiphy(wiphy);
+
 	if (wiphy->reg_notifier)
 		wiphy->reg_notifier(wiphy, request);
 }
@@ -2229,10 +2217,10 @@ static void wiphy_update_new_beacon(struct wiphy *wiphy,
 
 	sband = wiphy->bands[reg_beacon->chan.band];
 
-	scoped_guard(wiphy, wiphy) {
-		for (i = 0; i < sband->n_channels; i++)
-			changed |= handle_reg_beacon(wiphy, i, reg_beacon);
-	}
+	guard(wiphy)(wiphy);
+
+	for (i = 0; i < sband->n_channels; i++)
+		changed |= handle_reg_beacon(wiphy, i, reg_beacon);
 
 	if (changed && wiphy->flags & WIPHY_FLAG_CHANNEL_CHANGE_ON_BEACON)
 		reg_call_notifier(wiphy, get_last_request());
@@ -2564,6 +2552,8 @@ static void wiphy_update_regulatory(struct wiphy *wiphy,
 	enum nl80211_band band;
 	struct regulatory_request *lr = get_last_request();
 
+	lockdep_assert_wiphy(wiphy);
+
 	if (ignore_reg_update(wiphy, initiator)) {
 		/*
 		 * Regulatory updates set by CORE are ignored for custom
@@ -2581,13 +2571,11 @@ static void wiphy_update_regulatory(struct wiphy *wiphy,
 	lr->dfs_region = get_cfg80211_regdom()->dfs_region;
 
 	/* the notifier is called below, so ignore beacon hint changes */
-	scoped_guard(wiphy, wiphy) {
-		for (band = 0; band < NUM_NL80211_BANDS; band++)
-			handle_band(wiphy, initiator, wiphy->bands[band]);
+	for (band = 0; band < NUM_NL80211_BANDS; band++)
+		handle_band(wiphy, initiator, wiphy->bands[band]);
 
-		reg_process_beacons(wiphy);
-		reg_process_ht_flags(wiphy);
-	}
+	reg_process_beacons(wiphy);
+	reg_process_ht_flags(wiphy);
 
 	reg_call_notifier(wiphy, lr);
 }
@@ -2595,12 +2583,14 @@ static void wiphy_update_regulatory(struct wiphy *wiphy,
 static void update_all_wiphy_regulatory(enum nl80211_reg_initiator initiator)
 {
 	struct cfg80211_registered_device *rdev;
-	struct wiphy *wiphy;
 
 	lockdep_assert_held(&cfg80211_mutex);
 
 	for_each_rdev(rdev) {
-		wiphy = &rdev->wiphy;
+		struct wiphy *wiphy = &rdev->wiphy;
+
+		guard(wiphy)(wiphy);
+
 		wiphy_update_regulatory(wiphy, initiator);
 	}
 
@@ -2714,13 +2704,11 @@ void wiphy_apply_custom_regulatory(struct wiphy *wiphy,
 	if (IS_ERR(new_regd))
 		return;
 
-	rtnl_lock();
 	scoped_guard(wiphy, wiphy) {
 		tmp = get_wiphy_regdom(wiphy);
 		rcu_assign_pointer(wiphy->regd, new_regd);
 		rcu_free_regdom(tmp);
 	}
-	rtnl_unlock();
 }
 EXPORT_SYMBOL(wiphy_apply_custom_regulatory);
 
@@ -3081,8 +3069,7 @@ static void wiphy_all_share_dfs_chan_state(struct wiphy *wiphy)
 	struct cfg80211_registered_device *rdev;
 
 	lockdep_assert_held(&cfg80211_mutex);
-
-	guard(wiphy)(wiphy);
+	lockdep_assert_wiphy(wiphy);
 
 	for_each_rdev(rdev) {
 		if (wiphy == &rdev->wiphy)
@@ -3134,6 +3121,8 @@ static void reg_process_hint(struct regulatory_request *reg_request)
 	 */
 	if (treatment == REG_REQ_ALREADY_SET && wiphy &&
 	    wiphy->regulatory_flags & REGULATORY_STRICT_REG) {
+		guard(wiphy)(wiphy);
+
 		wiphy_update_regulatory(wiphy, initiator);
 		wiphy_all_share_dfs_chan_state(wiphy);
 		reg_check_channels();
@@ -3148,13 +3137,16 @@ out_free:
 static void notify_self_managed_wiphys(struct regulatory_request *request)
 {
 	struct cfg80211_registered_device *rdev;
-	struct wiphy *wiphy;
 
 	for_each_rdev(rdev) {
-		wiphy = &rdev->wiphy;
+		struct wiphy *wiphy = &rdev->wiphy;
+
 		if (wiphy->regulatory_flags & REGULATORY_WIPHY_SELF_MANAGED &&
-		    request->initiator == NL80211_REGDOM_SET_BY_USER)
+		    request->initiator == NL80211_REGDOM_SET_BY_USER) {
+			guard(wiphy)(wiphy);
+
 			reg_call_notifier(wiphy, request);
+		}
 	}
 }
 
@@ -3233,7 +3225,6 @@ static void reg_process_self_managed_hint(struct wiphy *wiphy)
 	enum nl80211_band band;
 	struct regulatory_request request = {};
 
-	ASSERT_RTNL();
 	lockdep_assert_wiphy(wiphy);
 
 	spin_lock(&reg_requests_lock);
@@ -3281,13 +3272,11 @@ static void reg_process_self_managed_hints(void)
 
 static void reg_todo(struct work_struct *work)
 {
-	rtnl_lock();
-	mutex_lock(&cfg80211_mutex);
+	guard(mutex)(&cfg80211_mutex);
+
 	reg_process_pending_hints();
 	reg_process_pending_beacon_hints();
 	reg_process_self_managed_hints();
-	mutex_unlock(&cfg80211_mutex);
-	rtnl_unlock();
 }
 
 static void queue_regulatory_request(struct regulatory_request *request)
@@ -4160,7 +4149,7 @@ int regulatory_set_wiphy_regd_sync(struct wiphy *wiphy,
 {
 	int ret;
 
-	ASSERT_RTNL();
+	lockdep_assert_wiphy(wiphy);
 
 	ret = __regulatory_set_wiphy_regd(wiphy, rd);
 	if (ret)
@@ -4179,25 +4168,28 @@ void wiphy_regulatory_register(struct wiphy *wiphy)
 
 	lockdep_assert_held(&cfg80211_mutex);
 
-	/* self-managed devices ignore beacon hints and country IE */
-	if (wiphy->regulatory_flags & REGULATORY_WIPHY_SELF_MANAGED) {
-		wiphy->regulatory_flags |= REGULATORY_DISABLE_BEACON_HINTS |
-					   REGULATORY_COUNTRY_IE_IGNORE;
+	scoped_guard(wiphy, wiphy) {
+		/* self-managed devices ignore beacon hints and country IE */
+		if (wiphy->regulatory_flags & REGULATORY_WIPHY_SELF_MANAGED) {
+			wiphy->regulatory_flags |= REGULATORY_DISABLE_BEACON_HINTS |
+						   REGULATORY_COUNTRY_IE_IGNORE;
 
-		/*
-		 * The last request may have been received before this
-		 * registration call. Call the driver notifier if
-		 * initiator is USER.
-		 */
-		if (lr->initiator == NL80211_REGDOM_SET_BY_USER)
-			reg_call_notifier(wiphy, lr);
+			/*
+			 * The last request may have been received before this
+			 * registration call. Call the driver notifier if
+			 * initiator is USER.
+			 */
+			if (lr->initiator == NL80211_REGDOM_SET_BY_USER)
+				reg_call_notifier(wiphy, lr);
+		}
+
+		if (!reg_dev_ignore_cell_hint(wiphy))
+			reg_num_devs_support_basehint++;
+
+		wiphy_update_regulatory(wiphy, lr->initiator);
+		wiphy_all_share_dfs_chan_state(wiphy);
 	}
 
-	if (!reg_dev_ignore_cell_hint(wiphy))
-		reg_num_devs_support_basehint++;
-
-	wiphy_update_regulatory(wiphy, lr->initiator);
-	wiphy_all_share_dfs_chan_state(wiphy);
 	reg_process_self_managed_hints();
 }
 
@@ -4455,11 +4447,8 @@ void regulatory_exit(void)
 	cancel_delayed_work_sync(&reg_check_chans);
 
 	/* Lock to suppress warnings */
-	rtnl_lock();
-	mutex_lock(&cfg80211_mutex);
-	reset_regdomains(true, NULL);
-	mutex_unlock(&cfg80211_mutex);
-	rtnl_unlock();
+	scoped_guard(mutex, &cfg80211_mutex)
+		reset_regdomains(true, NULL);
 
 	dev_set_uevent_suppress(&reg_fdev->dev, true);
 

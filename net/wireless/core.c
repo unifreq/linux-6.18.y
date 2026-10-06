@@ -560,15 +560,11 @@ static void cfg80211_propagate_radar_detect_wk(struct work_struct *work)
 	rdev = container_of(work, struct cfg80211_registered_device,
 			    propagate_radar_detect_wk);
 
-	rtnl_lock();
-	mutex_lock(&cfg80211_mutex);
+	guard(mutex)(&cfg80211_mutex);
 
 	regulatory_propagate_dfs_state(&rdev->wiphy, &rdev->radar_chandef,
 				       NL80211_DFS_UNAVAILABLE,
 				       NL80211_RADAR_DETECTED);
-
-	mutex_unlock(&cfg80211_mutex);
-	rtnl_unlock();
 }
 
 static void cfg80211_propagate_cac_done_wk(struct work_struct *work)
@@ -578,15 +574,11 @@ static void cfg80211_propagate_cac_done_wk(struct work_struct *work)
 	rdev = container_of(work, struct cfg80211_registered_device,
 			    propagate_cac_done_wk);
 
-	rtnl_lock();
-	mutex_lock(&cfg80211_mutex);
+	guard(mutex)(&cfg80211_mutex);
 
 	regulatory_propagate_dfs_state(&rdev->wiphy, &rdev->cac_done_chandef,
 				       NL80211_DFS_AVAILABLE,
 				       NL80211_RADAR_CAC_FINISHED);
-
-	mutex_unlock(&cfg80211_mutex);
-	rtnl_unlock();
 }
 
 static void cfg80211_wiphy_work(struct work_struct *work)

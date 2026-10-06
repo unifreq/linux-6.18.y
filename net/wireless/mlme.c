@@ -1119,7 +1119,6 @@ void cfg80211_dfs_channels_update_work(struct work_struct *work)
 			    dfs_update_channels_wk);
 	wiphy = &rdev->wiphy;
 
-	rtnl_lock();
 	mutex_lock(&cfg80211_mutex);
 	wiphy_lock(wiphy);
 	for (bandid = 0; bandid < NUM_NL80211_BANDS; bandid++) {
@@ -1135,7 +1134,6 @@ void cfg80211_dfs_channels_update_work(struct work_struct *work)
 				   HZ);
 		wiphy_unlock(wiphy);
 		mutex_unlock(&cfg80211_mutex);
-		rtnl_unlock();
 		return;
 	}
 
@@ -1202,7 +1200,6 @@ void cfg80211_dfs_channels_update_work(struct work_struct *work)
 					       expired[i].event);
 	}
 	mutex_unlock(&cfg80211_mutex);
-	rtnl_unlock();
 
 	kvfree(expired);
 

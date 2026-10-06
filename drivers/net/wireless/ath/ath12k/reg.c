@@ -124,9 +124,7 @@ ath12k_reg_notifier(struct wiphy *wiphy, struct regulatory_request *request)
 					    "failed set INIT Country code: %d\n", ret);
 		}
 
-		wiphy_lock(wiphy);
 		ath12k_mac_11d_scan_stop(ar);
-		wiphy_unlock(wiphy);
 
 		ar->regdom_set_by_user = true;
 	}

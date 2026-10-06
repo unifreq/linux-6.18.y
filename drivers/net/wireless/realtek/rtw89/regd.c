@@ -904,7 +904,6 @@ void rtw89_regd_notifier(struct wiphy *wiphy, struct regulatory_request *request
 	struct ieee80211_hw *hw = wiphy_to_ieee80211_hw(wiphy);
 	struct rtw89_dev *rtwdev = hw->priv;
 
-	wiphy_lock(wiphy);
 	rtw89_leave_ps_mode(rtwdev);
 
 	if (rtwdev->regulatory.programmed)
@@ -922,8 +921,6 @@ policy:
 	rtw89_regd_apply_policy_ant_gain(rtwdev);
 
 	rtw89_core_set_chip_txpwr(rtwdev);
-
-	wiphy_unlock(wiphy);
 }
 
 /* Maximum Transmit Power field (@raw) can be EIRP or PSD.
