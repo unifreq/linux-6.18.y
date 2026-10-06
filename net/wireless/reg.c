@@ -2867,12 +2867,12 @@ reg_process_hint_driver(struct wiphy *wiphy,
 		if (IS_ERR(regd))
 			return REG_REQ_IGNORE;
 
-		tmp = get_wiphy_regdom(wiphy);
 		ASSERT_RTNL();
 		scoped_guard(wiphy, wiphy) {
+			tmp = get_wiphy_regdom(wiphy);
 			rcu_assign_pointer(wiphy->regd, regd);
+			rcu_free_regdom(tmp);
 		}
-		rcu_free_regdom(tmp);
 	}
 
 
@@ -3957,9 +3957,11 @@ static int reg_set_rd_driver(const struct ieee80211_regdomain *rd,
 	 * However if a driver requested this specific regulatory
 	 * domain we keep it for its private use
 	 */
-	tmp = get_wiphy_regdom(request_wiphy);
-	rcu_assign_pointer(request_wiphy->regd, rd);
-	rcu_free_regdom(tmp);
+	scoped_guard(wiphy, request_wiphy) {
+		tmp = get_wiphy_regdom(request_wiphy);
+		rcu_assign_pointer(request_wiphy->regd, rd);
+		rcu_free_regdom(tmp);
+	}
 
 	rd = NULL;
 
