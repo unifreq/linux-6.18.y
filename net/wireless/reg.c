@@ -3062,6 +3062,8 @@ static void wiphy_all_share_dfs_chan_state(struct wiphy *wiphy)
 
 	ASSERT_RTNL();
 
+	guard(wiphy)(wiphy);
+
 	for_each_rdev(rdev) {
 		if (wiphy == &rdev->wiphy)
 			continue;
@@ -4281,7 +4283,7 @@ static void cfg80211_check_and_end_cac(struct cfg80211_registered_device *rdev)
 	struct wireless_dev *wdev;
 	unsigned int link_id;
 
-	guard(wiphy)(&rdev->wiphy);
+	lockdep_assert_wiphy(&rdev->wiphy);
 
 	/* If we finished CAC or received radar, we should end any
 	 * CAC running on the same channels.
@@ -4331,6 +4333,8 @@ void regulatory_propagate_dfs_state(struct wiphy *wiphy,
 		if (!ieee80211_get_channel(&rdev->wiphy,
 					   chandef->chan->center_freq))
 			continue;
+
+		guard(wiphy)(&rdev->wiphy);
 
 		cfg80211_set_dfs_state(&rdev->wiphy, chandef, dfs_state);
 
