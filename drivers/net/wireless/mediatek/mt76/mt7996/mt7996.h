@@ -659,6 +659,18 @@ mt7996_vif_conf_link(struct mt7996_dev *dev, struct ieee80211_vif *vif,
 							    link_conf);
 }
 
+static inline struct mt76_vif_link *
+mt7996_offchannel_link(struct mt76_wcid *wcid)
+{
+	struct mt7996_sta_link *msta_link;
+	struct mt7996_vif_link *link;
+
+	msta_link = container_of(wcid, struct mt7996_sta_link, wcid);
+	link = container_of(msta_link, struct mt7996_vif_link, msta_link);
+
+	return &link->mt76;
+}
+
 static inline struct mt7996_sta_link *
 mt7996_sta_link(struct mt7996_sta *msta, u8 link_id)
 {
