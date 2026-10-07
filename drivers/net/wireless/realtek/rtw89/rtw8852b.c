@@ -353,6 +353,21 @@ static const struct rtw89_btc_fbtc_mreg rtw89_btc_8852b_mon_reg[] = {
 static const u8 rtw89_btc_8852b_wl_rssi_thres[BTC_WL_RSSI_THMAX] = {70, 60, 50, 40};
 static const u8 rtw89_btc_8852b_bt_rssi_thres[BTC_BT_RSSI_THMAX] = {50, 40, 30, 20};
 
+static int rtw8852b_read_efuse(struct rtw89_dev *rtwdev, u8 *log_map,
+			       enum rtw89_efuse_block block)
+{
+	int ret;
+
+	ret = rtw8852bx_read_efuse(rtwdev, log_map, block);
+	if (ret)
+		return ret;
+
+	if (rtwdev->efuse.rfe_type == 41)
+		set_bit(RTW89_QUIRK_1ANT, rtwdev->quirks);
+
+	return 0;
+}
+
 static void rtw8852b_pwr_sps_ana(struct rtw89_dev *rtwdev)
 {
 	rtw89_write16(rtwdev, R_AX_SPS_ANA_ON_CTRL2, RTL8852B_DEFAULT_SPS_ANA);
@@ -773,6 +788,13 @@ static void rtw8852b_btc_set_rfe(struct rtw89_dev *rtwdev)
 		md->bt0_pos = BTC_BT_BTG;
 		/* the only BT shares the BTG antenna with WL path B */
 		dm->ant_xmap[BTC_RF_S1][BTC_BT_1ST] = 1;
+
+		if (test_bit(RTW89_QUIRK_1ANT, rtwdev->quirks)) {
+			md->ant.num = 1;
+			md->ant.single_pos = RF_PATH_B;
+			md->ant.btg_pos = RF_PATH_B;
+			md->ant.stream_cnt = 1;
+		}
 	}
 	rtwdev->btc.btg_pos = md->ant.btg_pos;
 	rtwdev->btc.ant_type = md->ant.type;
@@ -856,7 +878,7 @@ static const struct rtw89_chip_ops rtw8852b_chip_ops = {
 	.write_rf		= rtw89_phy_write_rf_v1,
 	.set_channel		= rtw8852b_set_channel,
 	.set_channel_help	= rtw8852b_set_channel_help,
-	.read_efuse		= rtw8852bx_read_efuse,
+	.read_efuse		= rtw8852b_read_efuse,
 	.read_phycap		= rtw8852bx_read_phycap,
 	.fem_setup		= NULL,
 	.data_setup		= NULL,

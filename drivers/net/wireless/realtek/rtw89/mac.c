@@ -3244,6 +3244,11 @@ static int rtw89_mac_setup_phycap_part0(struct rtw89_dev *rtwdev)
 	tx_ant = u32_get_bits(phycap->w3, RTW89_C2HREG_PHYCAP_W3_ANT_TX_NUM);
 	rx_ant = u32_get_bits(phycap->w3, RTW89_C2HREG_PHYCAP_W3_ANT_RX_NUM);
 
+	if (test_bit(RTW89_QUIRK_1ANT, rtwdev->quirks)) {
+		tx_ant = 1;
+		rx_ant = 1;
+	}
+
 	hal->tx_nss = tx_nss ? min_t(u8, tx_nss, chip->tx_nss) : chip->tx_nss;
 	hal->rx_nss = rx_nss ? min_t(u8, rx_nss, chip->rx_nss) : chip->rx_nss;
 
