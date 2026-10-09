@@ -1,0 +1,230 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * Device tree for the WF7000A RK3399 board.
+ *
+ * The WF7000A is a RK3399 board built on the Rockchip "Sapphire" baseboard
+ * (RK808 PMIC, 4x/8x eMMC + microSD, RTL8211 GMAC, HDMI, gpio-fan, power
+ * key).  Compared to the Rockchip "Excavator" reference design it differs in:
+ *
+ *   - Everest ES8316 codec on I2C1 + I2S0 (instead of Realtek RT5651)
+ *   - FUSB302 Type-C port controller on I2C4 (Excavator has none)
+ *   - a user/work LED on GPIO4_C5
+ *   - a "usb_gh_sel0" fixed regulator on GPIO4_D2
+ *   - eDP, PCIe, S/PDIF and SDIO/WiFi are not populated
+ *   - USB3-OTG port 0 operates in OTG mode
+ *
+ * This file is written against mainline bindings only and is intended to be
+ * built against the Armbian "rockchip64" 6.18.y kernel tree (or mainline).
+ * It supersedes the vendor DTB that was reverse engineered into
+ * rk3399-wf7000a-clean.dts.
+ */
+
+/dts-v1/;
+
+#include "rk3399-sapphire.dtsi"
+
+/ {
+	model = "WF7000A RK3399 Board";
+	compatible = "rockchip,rk3399-wf7000a", "rockchip,rk3399";
+
+	/*
+	 * pstore/ramoops console buffer, same layout as the Rockchip reference
+	 * designs.  Kept inline (instead of including rk3399-ramoops.dtsi)
+	 * because that file only exists in the Armbian/BSP tree, not in
+	 * mainline, so this board file stays self-contained.
+	 */
+	reserved-memory {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+
+		ramoops: ramoops@110000 {
+			compatible = "ramoops";
+			reg = <0x0 0x110000 0x0 0xf0000>;
+			console-size = <0x80000>;
+			ftrace-size = <0x00000>;
+			pmsg-size = <0x50000>;
+			record-size = <0x20000>;
+		};
+	};
+
+	adc-keys {
+		compatible = "adc-keys";
+		io-channels = <&saradc 1>;
+		io-channel-names = "buttons";
+		keyup-threshold-microvolt = <1800000>;
+		poll-interval = <100>;
+
+		button-up {
+			label = "Volume Up";
+			linux,code = <KEY_VOLUMEUP>;
+			press-threshold-microvolt = <100000>;
+		};
+
+		button-down {
+			label = "Volume Down";
+			linux,code = <KEY_VOLUMEDOWN>;
+			press-threshold-microvolt = <300000>;
+		};
+
+		button-back {
+			label = "Back";
+			linux,code = <KEY_BACK>;
+			press-threshold-microvolt = <985000>;
+		};
+
+		button-menu {
+			label = "Menu";
+			linux,code = <KEY_MENU>;
+			press-threshold-microvolt = <1314000>;
+		};
+	};
+
+	es8316-sound {
+		compatible = "simple-audio-card";
+		simple-audio-card,format = "i2s";
+		simple-audio-card,mclk-fs = <256>;
+		simple-audio-card,name = "rockchip,es8316-codec";
+		simple-audio-card,widgets =
+			"Microphone", "Mic Jack",
+			"Headphone", "Headphone Jack";
+		simple-audio-card,routing =
+			"Mic Jack", "Mic Bias",
+			"MIC1", "Mic Jack",
+			"Headphone Jack", "HPOL",
+			"Headphone Jack", "HPOR";
+		simple-audio-card,cpu {
+			sound-dai = <&i2s0>;
+		};
+		simple-audio-card,codec {
+			sound-dai = <&es8316>;
+		};
+	};
+
+	leds {
+		compatible = "gpio-leds";
+
+		work-led {
+			label = "wf7000:work";
+			gpios = <&gpio4 RK_PC5 GPIO_ACTIVE_LOW>;
+			default-state = "off";
+			linux,default-trigger = "none";
+		};
+	};
+
+	usb-gh-sel0 {
+		compatible = "regulator-fixed";
+		regulator-name = "usb_gh_sel0";
+		enable-active-high;
+		gpio = <&gpio4 RK_PD2 GPIO_ACTIVE_HIGH>;
+		regulator-always-on;
+		regulator-boot-on;
+	};
+};
+
+/*
+ * eDP is not routed on this board.  The eDP output is only used to keep the
+ * Sapphire/Excavator display pipeline description complete.
+ */
+&edp {
+	status = "disabled";
+};
+
+&i2c1 {
+	i2c-scl-rising-time-ns = <300>;
+	i2c-scl-falling-time-ns = <15>;
+	status = "okay";
+
+	es8316: es8316@10 {
+		compatible = "everest,es8316";
+		reg = <0x10>;
+		clocks = <&cru SCLK_I2S_8CH_OUT>;
+		clock-names = "mclk";
+		#sound-dai-cells = <0>;
+	};
+};
+
+&i2c4 {
+	i2c-scl-rising-time-ns = <600>;
+	i2c-scl-falling-time-ns = <20>;
+	status = "okay";
+
+	accelerometer@68 {
+		compatible = "invensense,mpu6500";
+		reg = <0x68>;
+		interrupt-parent = <&gpio1>;
+		interrupts = <RK_PC6 IRQ_TYPE_EDGE_RISING>;
+	};
+
+	fusb0: usb-typec@22 {
+		compatible = "fcs,fusb302";
+		reg = <0x22>;
+		interrupt-parent = <&gpio1>;
+		interrupts = <RK_PA2 IRQ_TYPE_LEVEL_LOW>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&fusb0_int>;
+		vbus-supply = <&vcc5v0_typec0>;
+		status = "okay";
+	};
+};
+
+&i2s0 {
+	rockchip,playback-channels = <8>;
+	rockchip,capture-channels = <8>;
+	status = "okay";
+};
+
+/* Not populated on this board */
+&pcie0 {
+	status = "disabled";
+};
+
+&pcie_phy {
+	status = "disabled";
+};
+
+&sdio0 {
+	status = "disabled";
+};
+
+&spdif {
+	status = "disabled";
+};
+
+&pinctrl {
+	usb2 {
+		fusb0_int: fusb0-int {
+			rockchip,pins = <1 RK_PA2 RK_FUNC_GPIO &pcfg_pull_up>;
+		};
+	};
+};
+
+/*
+ * The Type-C port of the Sapphire design is powered from vcc5v0_typec0, on
+ * this board the host port is fed by vcc5v0_host instead.
+ */
+&u2phy0_host {
+	phy-supply = <&vcc5v0_host>;
+};
+
+/* USB3 port 0 is a real OTG port on this board */
+&usbdrd_dwc3_0 {
+	dr_mode = "otg";
+};
+
+/* Both VOPs are clocked from the 400/100 MHz ACLK/HCLK and drive DCLK from
+ * the video PLLs, as required by the vendor firmware.
+ */
+&vopb {
+	assigned-clocks = <&cru ACLK_VOP0>, <&cru HCLK_VOP0>, <&cru DCLK_VOP0_DIV>;
+	assigned-clock-rates = <400000000>, <100000000>;
+	assigned-clock-parents = <0>, <0>, <&cru PLL_VPLL>;
+	status = "okay";
+};
+
+&vopl {
+	assigned-clocks = <&cru ACLK_VOP1>, <&cru HCLK_VOP1>, <&cru DCLK_VOP1_DIV>;
+	assigned-clock-rates = <400000000>, <100000000>;
+	assigned-clock-parents = <0>, <0>, <&cru PLL_CPLL>;
+	status = "okay";
+};
