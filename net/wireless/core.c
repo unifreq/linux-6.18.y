@@ -1462,6 +1462,7 @@ void cfg80211_dev_free(struct cfg80211_registered_device *rdev)
 	 * can just free it here.
 	 */
 	kfree(rcu_dereference_raw(rdev->wiphy.regd));
+	kfree(rdev->requested_regd);
 
 	kfree(rdev);
 }
