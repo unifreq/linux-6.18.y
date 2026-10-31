@@ -106,6 +106,9 @@
 #define RK3568_PHYREG18				0x44
 #define RK3568_PHYREG18_PLL_LOOP		0x32
 
+#define RK3568_PHYREG25				0x64
+#define RK3568_PHYREG25_RX_DET_BYPASS		BIT(5)
+
 #define RK3568_PHYREG30				0x74
 #define RK3568_PHYREG30_GATE_TX_PCK_SEL         BIT(7)
 #define RK3568_PHYREG30_GATE_TX_PCK_DLY_PLL_OFF BIT(7)
@@ -815,6 +818,13 @@ static int rk3568_combphy_cfg(struct rockchip_combphy_priv *priv)
 		rockchip_combphy_param_write(priv->phy_grf, &cfg->con1_for_pcie, true);
 		rockchip_combphy_param_write(priv->phy_grf, &cfg->con2_for_pcie, true);
 		rockchip_combphy_param_write(priv->phy_grf, &cfg->con3_for_pcie, true);
+
+		/*
+		 * Tx-detect-Rx errata: force the receiver detect result, as the
+		 * Rockchip BSP does. Some boards never leave Detect without it.
+		 */
+		rockchip_combphy_updatel(priv, RK3568_PHYREG25_RX_DET_BYPASS,
+					 RK3568_PHYREG25_RX_DET_BYPASS, RK3568_PHYREG25);
 		break;
 
 	case PHY_TYPE_USB3:

@@ -3,6 +3,9 @@
  * Telpo TPS781 (TPS781-MAIN-RK3399 V3.0) RK3399 POS board.
  * USB 5V: usb1/2/3_en = GPIO4_D0/C5/D4 (hogs; the hub has no DT node), host 5V = GPIO1_B1.
  * TF: vcc_sd enable = GPIO4_D2 (active low, Q6), vin = LDO4 (vcc_sdio).
+ * HDMI: DDC/HPD not routed (1024x768 only); &hdmi pins VPLL to the 65 MHz pixel clock because
+ * VPLL boots at 54 MHz and the VOP would otherwise round down to CPLL (800/13 = 61.538 MHz),
+ * which desynchronises TMDS from dclk and tears the picture diagonally.
  */
 
 /dts-v1/;
@@ -287,6 +290,8 @@
 
 &hdmi {
 	status = "okay";
+	assigned-clocks = <&cru PLL_VPLL>;
+	assigned-clock-rates = <65000000>;
 };
 
 &hdmi_sound {
