@@ -1,0 +1,86 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * YZD-S18 board (S905X3, 4GB RAM, 8GB eMMC, RTL8211F GbE, JMS578 USB3-SATA bridge).
+ * Found in the PP-Link S21 box. No WiFi/BT.
+ *
+ * The board is a derivative of the Hardkernel ODROID-C4 reference design,
+ * so it reuses meson-sm1-odroid.dtsi and only overrides the differences.
+ */
+
+/dts-v1/;
+
+#include "meson-sm1-odroid.dtsi"
+
+/ {
+	compatible = "amlogic,sm1";
+	model = "YZD-S18";
+
+	leds {
+		compatible = "gpio-leds";
+
+		led-blue {
+			color = <LED_COLOR_ID_BLUE>;
+			function = LED_FUNCTION_STATUS;
+			gpios = <&gpio_ao GPIOAO_11 GPIO_ACTIVE_HIGH>;
+			linux,default-trigger = "heartbeat";
+			panic-indicator;
+		};
+	};
+
+	sound {
+		model = "YZD-S18";
+	};
+};
+
+/* No overclock on this board: drop the 2.016/2.1GHz OPPs */
+&cpu_opp_table {
+	/delete-node/ opp-2016000000;
+	/delete-node/ opp-2100000000;
+};
+
+/* Only CEC_A is routed to the HDMI connector */
+&cecb_AO {
+	status = "disabled";
+};
+
+/* The PHY reset line is not wired on this board */
+&external_phy {
+	/delete-property/ reset-assert-us;
+	/delete-property/ reset-deassert-us;
+	/delete-property/ reset-gpios;
+};
+
+&ir {
+	linux,rc-map-name = "rc-yzd-s18";
+};
+
+/* No 40-pin header */
+&gpio {
+	/delete-property/ gpio-line-names;
+};
+
+&gpio_ao {
+	/delete-property/ gpio-line-names;
+};
+
+/* TF slot (not populated by default): only 3.3V is available, so no UHS modes */
+&sd_emmc_b {
+	max-frequency = <25000000>;
+	/delete-property/ sd-uhs-sdr12;
+	/delete-property/ sd-uhs-sdr25;
+	/delete-property/ sd-uhs-sdr50;
+	/delete-property/ sd-uhs-sdr104;
+	vqmmc-supply = <&tflash_vdd>;
+};
+
+/* TF_IO has no enable line on this board */
+&tf_io {
+	/delete-property/ enable-gpios;
+	/delete-property/ enable-active-high;
+};
+
+/* VCC_5V is always on, not switched by GPIOH_8 */
+&vcc_5v {
+	/delete-property/ gpio;
+	/delete-property/ enable-active-high;
+};
