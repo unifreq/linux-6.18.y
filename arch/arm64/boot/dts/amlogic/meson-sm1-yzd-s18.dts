@@ -15,6 +15,15 @@
 	compatible = "amlogic,sm1";
 	model = "YZD-S18";
 
+	/*
+	 * The stock vendor U-Boot does not fix up memory@0 when booting with
+	 * booti, so the 1GB value from meson-sm1-odroid.dtsi would stay in place.
+	 * Upper limit as reported by the vendor Android firmware on this board.
+	 */
+	memory@0 {
+		reg = <0x0 0x0 0x0 0xf5800000>;
+	};
+
 	leds {
 		compatible = "gpio-leds";
 
