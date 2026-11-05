@@ -5071,6 +5071,15 @@ EXPORT_SYMBOL_GPL(nvme_start_ctrl);
 void nvme_uninit_ctrl(struct nvme_ctrl *ctrl)
 {
 	nvme_stop_keep_alive(ctrl);
+
+	/*
+	 * An AER completion can queue async_event_work; drain it before the
+	 * controller's final release.  Note that ana_work has additional
+	 * producers (namespace scanning via nvme_scan_work, and the failover
+	 * path in nvme_failover_req), which is why nvme_mpath_uninit()
+	 * separately cancels ana_work after this point.
+	 */
+	cancel_work_sync(&ctrl->async_event_work);
 	nvme_hwmon_exit(ctrl);
 	nvme_fault_inject_fini(&ctrl->fault_inject);
 	dev_pm_qos_hide_latency_tolerance(ctrl->device);
