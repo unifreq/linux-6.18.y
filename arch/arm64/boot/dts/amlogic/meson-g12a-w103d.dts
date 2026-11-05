@@ -361,8 +361,21 @@
 	temperature = <85000>;
 };
 
+/*
+ * Throttle the GPU with the CPU at the passive trip, as the vendor tree does.
+ * The common G12 map only cools the GPU when DDR reaches 85 C.
+ */
+&cpu_thermal {
+	cooling-maps {
+		map2 {
+			trip = <&cpu_passive>;
+			cooling-device = <&mali THERMAL_NO_LIMIT THERMAL_NO_LIMIT>;
+		};
+	};
+};
+
 &ethmac {
-	/* S905L3A vendor trees do not expose the G12A Ethernet reset lines. */
+	/* S905X2 vendor trees do not expose the G12A Ethernet reset lines. */
 	/delete-property/ resets;
 	/delete-property/ reset-names;
 	phy-handle = <&internal_ephy>;
