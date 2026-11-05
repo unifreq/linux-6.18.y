@@ -140,7 +140,13 @@ mtk_cfg80211_change_iface(struct wiphy *wiphy,
 int
 mtk_cfg80211_add_key(struct wiphy *wiphy,
 		     struct wireless_dev *wdev,
-		     int link_id, u8 key_index, bool pairwise, const u8 *mac_addr, struct key_params *params)
+		     int link_id, u8 key_index,
+#if KERNEL_VERSION(6, 18, 60) <= CFG80211_VERSION_CODE
+		     enum nl80211_key_type type,
+#else
+		     bool pairwise,
+#endif
+		     const u8 *mac_addr, struct key_params *params)
 {
 	PARAM_KEY_T rKey;
 	P_GLUE_INFO_T prGlueInfo = NULL;
@@ -148,6 +154,9 @@ mtk_cfg80211_add_key(struct wiphy *wiphy,
 	INT_32 i4Rslt = -EINVAL;
 	UINT_32 u4BufLen = 0;
 	UINT_8 tmp1[8], tmp2[8];
+#if KERNEL_VERSION(6, 18, 60) <= CFG80211_VERSION_CODE
+	bool pairwise = (type == NL80211_KEYTYPE_PAIRWISE);
+#endif
 #if CFG_SUPPORT_REPLAY_DETECTION
 	P_BSS_INFO_T prBssInfo = NULL;
 	struct SEC_DETECT_REPLAY_INFO *prDetRplyInfo = NULL;
@@ -300,7 +309,11 @@ mtk_cfg80211_get_key(struct wiphy *wiphy,
 		     struct wireless_dev *wdev,
 		     int link_id,
 		     u8 key_index,
+#if KERNEL_VERSION(6, 18, 60) <= CFG80211_VERSION_CODE
+		     enum nl80211_key_type type,
+#else
 		     bool pairwise,
+#endif
 		     const u8 *mac_addr, void *cookie, void (*callback) (void *cookie, struct key_params *)
 )
 {
@@ -328,13 +341,22 @@ mtk_cfg80211_get_key(struct wiphy *wiphy,
  *         others:  failure
  */
 /*----------------------------------------------------------------------------*/
-int mtk_cfg80211_del_key(struct wiphy *wiphy, struct wireless_dev *wdev, int link_id, u8 key_index, bool pairwise, const u8 *mac_addr)
+int mtk_cfg80211_del_key(struct wiphy *wiphy, struct wireless_dev *wdev, int link_id, u8 key_index,
+#if KERNEL_VERSION(6, 18, 60) <= CFG80211_VERSION_CODE
+			 enum nl80211_key_type type,
+#else
+			 bool pairwise,
+#endif
+			 const u8 *mac_addr)
 {
 	P_GLUE_INFO_T prGlueInfo = NULL;
 	WLAN_STATUS rStatus = WLAN_STATUS_SUCCESS;
 	PARAM_REMOVE_KEY_T rRemoveKey;
 	UINT_32 u4BufLen = 0;
 	INT_32 i4Rslt = -EINVAL;
+#if KERNEL_VERSION(6, 18, 60) <= CFG80211_VERSION_CODE
+	bool pairwise __maybe_unused = (type == NL80211_KEYTYPE_PAIRWISE);
+#endif
 
 	prGlueInfo = (P_GLUE_INFO_T) wiphy_priv(wiphy);
 	ASSERT(prGlueInfo);

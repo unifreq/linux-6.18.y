@@ -575,7 +575,13 @@ int mtk_p2p_cfg80211_del_iface(struct wiphy *wiphy, struct wireless_dev *wdev)
 
 int mtk_p2p_cfg80211_add_key(struct wiphy *wiphy,
 			     struct wireless_dev *wdev,
-			     int link_id, u8 key_index, bool pairwise, const u8 *mac_addr, struct key_params *params)
+			     int link_id, u8 key_index,
+#if KERNEL_VERSION(6, 18, 60) <= CFG80211_VERSION_CODE
+			     enum nl80211_key_type type,
+#else
+			     bool pairwise,
+#endif
+			     const u8 *mac_addr, struct key_params *params)
 {
 	struct net_device *ndev = wdev->netdev;
 	P_GLUE_INFO_T prGlueInfo = NULL;
@@ -586,6 +592,9 @@ int mtk_p2p_cfg80211_add_key(struct wiphy *wiphy,
 	UINT_8 ucRoleIdx = 0;
 	const UINT_8 aucBCAddr[] = BC_MAC_ADDR;
 	/* const UINT_8 aucZeroMacAddr[] = NULL_MAC_ADDR; */
+#if KERNEL_VERSION(6, 18, 60) <= CFG80211_VERSION_CODE
+	bool pairwise = (type == NL80211_KEYTYPE_PAIRWISE);
+#endif
 #if CFG_SUPPORT_REPLAY_DETECTION
 	P_BSS_INFO_T prBssInfo = NULL;
 	struct SEC_DETECT_REPLAY_INFO *prDetRplyInfo = NULL;
@@ -720,7 +729,11 @@ int mtk_p2p_cfg80211_get_key(struct wiphy *wiphy,
 			     struct wireless_dev *wdev,
 			     int link_id,
 			     u8 key_index,
+#if KERNEL_VERSION(6, 18, 60) <= CFG80211_VERSION_CODE
+			     enum nl80211_key_type type,
+#else
 			     bool pairwise,
+#endif
 			     const u8 *mac_addr, void *cookie, void (*callback) (void *cookie, struct key_params *)
 )
 {
@@ -736,7 +749,13 @@ int mtk_p2p_cfg80211_get_key(struct wiphy *wiphy,
 }
 
 int mtk_p2p_cfg80211_del_key(struct wiphy *wiphy,
-			     struct wireless_dev *wdev, int link_id, u8 key_index, bool pairwise, const u8 *mac_addr)
+			     struct wireless_dev *wdev, int link_id, u8 key_index,
+#if KERNEL_VERSION(6, 18, 60) <= CFG80211_VERSION_CODE
+			     enum nl80211_key_type type,
+#else
+			     bool pairwise,
+#endif
+			     const u8 *mac_addr)
 {
 	struct net_device *ndev = wdev->netdev;
 	P_GLUE_INFO_T prGlueInfo = NULL;
@@ -745,6 +764,9 @@ int mtk_p2p_cfg80211_del_key(struct wiphy *wiphy,
 	WLAN_STATUS rStatus = WLAN_STATUS_SUCCESS;
 	UINT_32 u4BufLen = 0;
 	UINT_8 ucRoleIdx = 0;
+#if KERNEL_VERSION(6, 18, 60) <= CFG80211_VERSION_CODE
+	bool pairwise __maybe_unused = (type == NL80211_KEYTYPE_PAIRWISE);
+#endif
 
 	ASSERT(wiphy);
 
