@@ -1659,7 +1659,7 @@ static void sdiohal_irq_handler_data(struct sdio_func *func)
 	sdiohal_rx_up();
 }
 
-static int sdiohal_suspend(struct device *dev)
+static int __maybe_unused sdiohal_suspend(struct device *dev)
 {
 	struct sdiohal_data_t *p_data = sdiohal_get_data();
 	struct mchn_ops_t *sdiohal_ops;
@@ -1729,7 +1729,7 @@ static int sdiohal_suspend(struct device *dev)
 	return 0;
 }
 
-static int sdiohal_resume(struct device *dev)
+static int __maybe_unused sdiohal_resume(struct device *dev)
 {
 	struct sdiohal_data_t *p_data = sdiohal_get_data();
 	struct mchn_ops_t *sdiohal_ops;
