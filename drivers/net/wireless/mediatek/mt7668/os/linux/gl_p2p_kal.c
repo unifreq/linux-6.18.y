@@ -1277,8 +1277,15 @@ VOID kalP2PRddDetectUpdate(IN P_GLUE_INFO_T prGlueInfo, IN UINT_8 ucRoleIndex)
 		 * wdev->cac_started is private to cfg80211 since the MLO
 		 * rework, the state is tracked there now. */
 		DBGLOG(INIT, INFO, "kalP2PRddDetectUpdate: Update to OS\n");
+		/* cfg80211_radar_event() requires the wiphy mutex */
+#if KERNEL_VERSION(5, 12, 0) <= CFG80211_VERSION_CODE
+		wiphy_lock(prGlueInfo->prP2PInfo[ucRoleIndex]->prWdev->wiphy);
+#endif
 		cfg80211_radar_event(prGlueInfo->prP2PInfo[ucRoleIndex]->prWdev->wiphy,
 				prGlueInfo->prP2PInfo[ucRoleIndex]->chandef, GFP_KERNEL);
+#if KERNEL_VERSION(5, 12, 0) <= CFG80211_VERSION_CODE
+		wiphy_unlock(prGlueInfo->prP2PInfo[ucRoleIndex]->prWdev->wiphy);
+#endif
 		DBGLOG(INIT, INFO, "kalP2PRddDetectUpdate: Update to OS Done\n");
 
 		netif_carrier_off(prGlueInfo->prP2PInfo[ucRoleIndex]->prDevHandler);
@@ -1312,12 +1319,19 @@ VOID kalP2PCacFinishedUpdate(IN P_GLUE_INFO_T prGlueInfo, IN UINT_8 ucRoleIndex)
 		}
 
 		DBGLOG(INIT, INFO, "kalP2PCacFinishedUpdate: Update to OS\n");
+		/* cfg80211_cac_event() requires the wiphy mutex */
+#if KERNEL_VERSION(5, 12, 0) <= CFG80211_VERSION_CODE
+		wiphy_lock(prGlueInfo->prP2PInfo[ucRoleIndex]->prWdev->wiphy);
+#endif
 #if KERNEL_VERSION(3, 14, 0) <= CFG80211_VERSION_CODE
 		cfg80211_cac_event(prGlueInfo->prP2PInfo[ucRoleIndex]->prDevHandler,
 				prGlueInfo->prP2PInfo[ucRoleIndex]->chandef, NL80211_RADAR_CAC_FINISHED, GFP_KERNEL, 0);
 #else
 		cfg80211_cac_event(prGlueInfo->prP2PInfo[ucRoleIndex]->prDevHandler,
 				NL80211_RADAR_CAC_FINISHED, GFP_KERNEL);
+#endif
+#if KERNEL_VERSION(5, 12, 0) <= CFG80211_VERSION_CODE
+		wiphy_unlock(prGlueInfo->prP2PInfo[ucRoleIndex]->prWdev->wiphy);
 #endif
 		DBGLOG(INIT, INFO, "kalP2PCacFinishedUpdate: Update to OS Done\n");
 
