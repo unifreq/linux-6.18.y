@@ -3909,15 +3909,25 @@ static void sprdwl_reg_notify(struct wiphy *wiphy,
 		for (channel = 0; channel < sband->n_channels; channel++) {
 			chan = &sband->channels[channel];
 
-			reg_rule =
-			    freq_reg_info(wiphy, MHZ_TO_KHZ(chan->center_freq));
-			if (IS_ERR(reg_rule))
-				continue;
+			/*
+			 * freq_reg_info() walks wiphy->regd, which is RCU
+			 * protected, and the returned rule points into that
+			 * regdomain. The regulatory core no longer holds the
+			 * RTNL when calling the notifier, so the lookup and
+			 * every use of the returned rule must stay inside an
+			 * RCU read-side critical section.
+			 */
+			scoped_guard(rcu) {
+				reg_rule = freq_reg_info(wiphy,
+						MHZ_TO_KHZ(chan->center_freq));
+				if (IS_ERR(reg_rule))
+					continue;
 
-			freq_range = &reg_rule->freq_range;
-			if (last_start_freq != freq_range->start_freq_khz) {
-				last_start_freq = freq_range->start_freq_khz;
-				n_rules++;
+				freq_range = &reg_rule->freq_range;
+				if (last_start_freq != freq_range->start_freq_khz) {
+					last_start_freq = freq_range->start_freq_khz;
+					n_rules++;
+				}
 			}
 
 			sprdwl_save_ch_info(priv, band, chan->flags,
@@ -3958,26 +3968,29 @@ static void sprdwl_reg_notify(struct wiphy *wiphy,
 			if (intf->sta_home_channel && chan->flags & IEEE80211_CHAN_RADAR)
 				intf->sta_home_channel = 0;
 #endif
-			reg_rule =
-			    freq_reg_info(wiphy, MHZ_TO_KHZ(chan->center_freq));
-			if (IS_ERR(reg_rule))
-				continue;
+			/* see the comment on the first lookup above */
+			scoped_guard(rcu) {
+				reg_rule = freq_reg_info(wiphy,
+						MHZ_TO_KHZ(chan->center_freq));
+				if (IS_ERR(reg_rule))
+					continue;
 
-			freq_range = &reg_rule->freq_range;
-			if (last_start_freq != freq_range->start_freq_khz &&
-			    i < n_rules) {
-				last_start_freq = freq_range->start_freq_khz;
+				freq_range = &reg_rule->freq_range;
+				if (last_start_freq != freq_range->start_freq_khz &&
+				    i < n_rules) {
+					last_start_freq = freq_range->start_freq_khz;
 
-				memcpy(&rd->reg_rules[i], reg_rule,
-				       sizeof(struct ieee80211_reg_rule));
-				i++;
+					memcpy(&rd->reg_rules[i], reg_rule,
+					       sizeof(struct ieee80211_reg_rule));
+					i++;
 
-				wl_info(
-					  "%d KHz - %d KHz @ %d KHz flags %#x, chan->flags:%x\n",
-					  freq_range->start_freq_khz,
-					  freq_range->end_freq_khz,
-					  freq_range->max_bandwidth_khz,
-					  reg_rule->flags, chan->flags);
+					wl_info(
+						  "%d KHz - %d KHz @ %d KHz flags %#x, chan->flags:%x\n",
+						  freq_range->start_freq_khz,
+						  freq_range->end_freq_khz,
+						  freq_range->max_bandwidth_khz,
+						  reg_rule->flags, chan->flags);
+				}
 			}
 		}
 	}

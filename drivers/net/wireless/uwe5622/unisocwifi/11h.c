@@ -93,9 +93,16 @@ void sprdwl_dfs_cac_work_queue(struct work_struct *work)
 	chandef = vif->dfs_chandef;
 	if (vif->wdev.cac_started) {
 		wl_err("CAC timer finished; No radar detected\n");
+		/* cfg80211_cac_event() requires the wiphy mutex */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
+		wiphy_lock(vif->priv->wiphy);
+#endif
 		cfg80211_cac_event(vif->ndev, &chandef,
 				   NL80211_RADAR_CAC_FINISHED,
 				   GFP_KERNEL);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
+		wiphy_unlock(vif->priv->wiphy);
+#endif
 	}
 }
 
@@ -199,8 +206,15 @@ void sprdwl_abort_cac(struct sprdwl_vif *vif)
 	if (vif->wdev.cac_started) {
 		sprdwl_stop_radar_detection(vif, &vif->dfs_chandef);
 		cancel_delayed_work_sync(&vif->dfs_cac_work);
+		/* cfg80211_cac_event() requires the wiphy mutex */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
+		wiphy_lock(vif->priv->wiphy);
+#endif
 		cfg80211_cac_event(vif->ndev, &vif->dfs_chandef,
 				   NL80211_RADAR_CAC_ABORTED, GFP_KERNEL);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
+		wiphy_unlock(vif->priv->wiphy);
+#endif
 	}
 }
 
@@ -214,8 +228,15 @@ int sprdwl_11h_handle_radar_detected(struct sprdwl_vif *vif,
 
 	wl_debug("radar detected; indicating kernel\n");
 	sprdwl_stop_radar_detection(vif, &vif->dfs_chandef);
+	/* cfg80211_radar_event() requires the wiphy mutex */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
+	wiphy_lock(vif->priv->wiphy);
+#endif
 	cfg80211_radar_event(vif->priv->wiphy, &vif->dfs_chandef,
 			     GFP_KERNEL);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
+	wiphy_unlock(vif->priv->wiphy);
+#endif
 	/*print radar detect reg & type*/
 	wl_debug("regdomain:%d,radar detection type:%d\n",
 		 rdr_event->reg_domain, rdr_event->det_type);
