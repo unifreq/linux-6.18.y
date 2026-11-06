@@ -11,7 +11,6 @@
 #include <dt-bindings/leds/common.h>
 #include <dt-bindings/pwm/pwm.h>
 #include "rk3528.dtsi"
-#include "rk3528-op-pwm.dtsi"
 
 / {
 	model = "Radxa E20C";
@@ -415,31 +414,12 @@
 
 &sdmmc {
 	bus-width = <4>;
-	max-frequency = <150000000>;
 	cap-mmc-highspeed;
 	cap-sd-highspeed;
-	pinctrl-names = "default";
-	pinctrl-0 = <&sdmmc_clk &sdmmc_cmd &sdmmc_det &sdmmc_bus4>;
 	disable-wp;
-	sd-uhs-sdr25;
-	sd-uhs-sdr50;
-	sd-uhs-ddr50;
 	sd-uhs-sdr104;
 	vmmc-supply = <&vcc_3v3>;
 	vqmmc-supply = <&vccio_sd>;
-	status = "okay";
-};
-
-&usb2phy {
-	status = "okay";
-};
-
-&usb2phy_host {
-	phy-supply = <&vcc5v0_usb20>;
-	status = "okay";
-};
-
-&usb2phy_otg {
 	status = "okay";
 };
 
@@ -457,10 +437,36 @@
 	status = "okay";
 };
 
+/*
+ * The usb controller can only work in peripheral mode, as it is
+ * connected to one of the ports of an outward-facing usb hub.
+ *
+ * type_c-port (hub-input)
+ *          |
+ *       usb-hub
+ *     |         |
+ * uart-usb   usb-host0
+ *     |
+ *   uart0
+ */
 &usb_host0_xhci {
+	dr_mode = "peripheral";
 	extcon = <&usb2phy>;
 	maximum-speed = "high-speed";
 	phys = <&usb2phy_otg>;
 	phy-names = "usb2-phy";
+	status = "okay";
+};
+
+&usb2phy {
+	status = "okay";
+};
+
+&usb2phy_host {
+	phy-supply = <&vcc5v0_usb20>;
+	status = "okay";
+};
+
+&usb2phy_otg {
 	status = "okay";
 };
