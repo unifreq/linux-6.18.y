@@ -1570,6 +1570,8 @@ patternProperties:
     description: Shenzhen Sunchip Technology Co., Ltd
   "^sundance,.*":
     description: Sundance DSP Inc.
+  "^sunniwell,.*":
+    description: Sunniwell Co., Ltd.
   "^sunplus,.*":
     description: Sunplus Technology Co., Ltd.
   "^SUNW,.*":
