@@ -1292,7 +1292,17 @@ static void rwnx_radar_detected(struct rwnx_hw *rwnx_hw)
     chan_def = rwnx_hw->chanctx_table[rwnx_hw->cur_chanctx].chan_def;
 
     rwnx_radar_cancel_cac(&rwnx_hw->radar);
+    /*
+     * cfg80211_radar_event() must be called with the wiphy mutex held,
+     * as it updates the per-wiphy DFS state.
+     */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
+    wiphy_lock(rwnx_hw->wiphy);
+#endif
     cfg80211_radar_event(rwnx_hw->wiphy, &chan_def, GFP_KERNEL);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
+    wiphy_unlock(rwnx_hw->wiphy);
+#endif
 
 #endif /* CONFIG_RWNX_FULLMAC */
 }
@@ -1471,6 +1481,10 @@ static void rwnx_radar_cac_work(struct work_struct *ws)
     }
 
     ctxt = &rwnx_hw->chanctx_table[radar->cac_vif->ch_index];
+    /* cfg80211_cac_event() requires the wiphy mutex */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
+    wiphy_lock(rwnx_hw->wiphy);
+#endif
     cfg80211_cac_event(radar->cac_vif->ndev,
                     #if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 14, 0)
                        &ctxt->chan_def,
@@ -1479,6 +1493,9 @@ static void rwnx_radar_cac_work(struct work_struct *ws)
                        NL80211_RADAR_CAC_FINISHED, GFP_KERNEL, 0);
 #else
                        NL80211_RADAR_CAC_FINISHED, GFP_KERNEL);
+#endif
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
+    wiphy_unlock(rwnx_hw->wiphy);
 #endif
     rwnx_send_apm_stop_cac_req(rwnx_hw, radar->cac_vif);
     rwnx_chanctx_unlink(radar->cac_vif);
@@ -1613,6 +1630,10 @@ void rwnx_radar_cancel_cac(struct rwnx_radar *radar)
         struct rwnx_chanctx *ctxt;
         ctxt = &rwnx_hw->chanctx_table[radar->cac_vif->ch_index];
         rwnx_send_apm_stop_cac_req(rwnx_hw, radar->cac_vif);
+        /* cfg80211_cac_event() requires the wiphy mutex */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
+        wiphy_lock(rwnx_hw->wiphy);
+#endif
         cfg80211_cac_event(radar->cac_vif->ndev,
                         #if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 14, 0)
                            &ctxt->chan_def,
@@ -1621,6 +1642,9 @@ void rwnx_radar_cancel_cac(struct rwnx_radar *radar)
                            NL80211_RADAR_CAC_FINISHED, GFP_KERNEL, 0);
 #else
                            NL80211_RADAR_CAC_ABORTED, GFP_KERNEL);
+#endif
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
+        wiphy_unlock(rwnx_hw->wiphy);
 #endif
         rwnx_chanctx_unlink(radar->cac_vif);
     }

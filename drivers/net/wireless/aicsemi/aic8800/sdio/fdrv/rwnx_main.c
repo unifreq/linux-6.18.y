@@ -1385,7 +1385,28 @@ static int rwnx_close(struct net_device *dev)
 			if (testmode == 0) {
 				rwnx_send_me_config_req(rwnx_hw);
 				// Set channel parameters to firmware
-				rwnx_send_me_chan_config_req(rwnx_hw, (char *)rwnx_hw->wiphy->regd->alpha2);
+				{
+					const struct ieee80211_regdomain *regd;
+					char alpha2[3] = { 0 };
+					bool have_regd = false;
+
+					/*
+					 * Copy the country code out of the RCU
+					 * section: rwnx_send_me_chan_config_req()
+					 * sends a message and may sleep.
+					 */
+					scoped_guard(rcu) {
+						regd = get_wiphy_regdom(rwnx_hw->wiphy);
+						if (regd) {
+							memcpy(alpha2, regd->alpha2,
+							       sizeof(alpha2) - 1);
+							have_regd = true;
+						}
+					}
+					if (have_regd)
+						rwnx_send_me_chan_config_req(rwnx_hw,
+									     alpha2);
+				}
 			}
 		}
 #endif

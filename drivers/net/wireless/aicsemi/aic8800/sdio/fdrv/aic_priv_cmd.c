@@ -319,7 +319,17 @@ static int aic_priv_cmd_set_tx (struct rwnx_hw *rwnx_hw, int argc, char *argv[],
 		settx_param.mode, settx_param.rate, settx_param.length, settx_param.tx_intv_us);
 
 #ifdef CONFIG_POWER_LIMIT
-	r_idx = get_ccode_region(rwnx_hw->wiphy->regd->alpha2);
+	{
+		const struct ieee80211_regdomain *regd;
+
+		scoped_guard(rcu) {
+			regd = get_wiphy_regdom(rwnx_hw->wiphy);
+			if (regd)
+				r_idx = get_ccode_region((char *)regd->alpha2);
+			else
+				r_idx = REGIONS_DEFAULT;
+		}
+	}
 	txpwr_loss = &txpwr_loss_tmp;
 	get_userconfig_txpwr_loss(txpwr_loss);
 	if (txpwr_loss->loss_enable_2g4 == 1)

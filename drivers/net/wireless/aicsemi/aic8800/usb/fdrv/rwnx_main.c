@@ -1685,7 +1685,27 @@ static int rwnx_close(struct net_device *dev)
                 // Set parameters to firmware
                 rwnx_send_me_config_req(rwnx_hw);
                 // Set channel parameters to firmware
-                rwnx_send_me_chan_config_req(rwnx_hw, (char *)rwnx_hw->wiphy->regd->alpha2);
+                {
+                    const struct ieee80211_regdomain *regd;
+                    char alpha2[3] = { 0 };
+                    bool have_regd = false;
+
+                    /*
+                     * Copy the country code out of the RCU section:
+                     * rwnx_send_me_chan_config_req() sends a message and
+                     * may sleep.
+                     */
+                    scoped_guard(rcu) {
+                        regd = get_wiphy_regdom(rwnx_hw->wiphy);
+                        if (regd) {
+                            memcpy(alpha2, regd->alpha2,
+                                   sizeof(alpha2) - 1);
+                            have_regd = true;
+                        }
+                    }
+                    if (have_regd)
+                        rwnx_send_me_chan_config_req(rwnx_hw, alpha2);
+                }
             #if defined(AICWF_USB_SUPPORT)
             }
             #endif
@@ -2138,7 +2158,17 @@ void rssi_update_txpwrloss(struct rwnx_sta *sta, s8_l rssi, struct rwnx_vif *vif
 	unsigned long current_jiffies = jiffies;
 	unsigned long elapsed_time;
 
-	r_idx = get_ccode_region(rwnx_hw->wiphy->regd->alpha2);
+	{
+		const struct ieee80211_regdomain *regd;
+
+		scoped_guard(rcu) {
+			regd = get_wiphy_regdom(rwnx_hw->wiphy);
+			if (regd)
+				r_idx = get_ccode_region((char *)regd->alpha2);
+			else
+				r_idx = REGIONS_DEFAULT;
+		}
+	}
 	//printk("r_idx: %d, ap_freq: %d\n", r_idx, vif->ap.ap_freq);
 	if ((r_idx == REGIONS_ETSI || r_idx == REGIONS_DEFAULT) && vif->ap.ap_freq >= 5735)
 		lp_freq = true;

@@ -341,7 +341,17 @@ static int aic_priv_cmd_set_tx (struct rwnx_hw *rwnx_hw, int argc, char *argv[],
 	AICWFDBG(LOGINFO, "txparam:%d,%d,%d,%d,%d,%d\n", settx_param.chan, settx_param.bw,
 		settx_param.mode, settx_param.rate, settx_param.length, settx_param.tx_intv_us);
 #ifdef CONFIG_POWER_LIMIT
-	r_idx = get_ccode_region(rwnx_hw->wiphy->regd->alpha2);
+	{
+		const struct ieee80211_regdomain *regd;
+
+		scoped_guard(rcu) {
+			regd = get_wiphy_regdom(rwnx_hw->wiphy);
+			if (regd)
+				r_idx = get_ccode_region((char *)regd->alpha2);
+			else
+				r_idx = REGIONS_DEFAULT;
+		}
+	}
 	txpwr_loss = &txpwr_loss_tmp;
 	get_userconfig_txpwr_loss(txpwr_loss);
 	if (txpwr_loss->loss_enable_2g4 == 1)
@@ -1910,7 +1920,15 @@ int get_cs_info(struct rwnx_vif *vif, u8 *mac_addr, u8 *val)
 	}
 
     memset(&cs_info, 0, sizeof(struct aicwf_cs_info));
-    memcpy(cs_info.countrycode, vif->rwnx_hw->wiphy->regd->alpha2, 2);
+    {
+        const struct ieee80211_regdomain *regd;
+
+        scoped_guard(rcu) {
+            regd = get_wiphy_regdom(vif->rwnx_hw->wiphy);
+            if (regd)
+                memcpy(cs_info.countrycode, regd->alpha2, 2);
+        }
+    }
 
     if((sta == NULL) && (RWNX_VIF_TYPE(vif) == NL80211_IFTYPE_AP)) {
         sta  = &vif->rwnx_hw->sta_table[vif->ap.bcmc_index];
