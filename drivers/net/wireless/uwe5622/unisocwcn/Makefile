@@ -1,3 +1,10 @@
+# Keep other vendors' flags out of the Amlogic multi-architecture build.
+ifeq ($(CONFIG_AML_WIFI_DEVICE_UWE5621),y)
+override CONFIG_RK_WIFI_DEVICE_UWE5621 := n
+override CONFIG_RK_WIFI_DEVICE_UWE5622 := n
+override CONFIG_AW_WIFI_DEVICE_UWE5622 := n
+endif
+
 PWD := $(shell pwd)
 CURFOLDER ?= $(pwd)
 

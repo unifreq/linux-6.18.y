@@ -114,7 +114,11 @@ static char *wcn_fw_path[WCN_FW_MAX_PATH_NUM] = {
 	UNISOC_FW_PATH_DEFAULT,		/* most of projects */
 	"/lib/firmware/"		/* allwinner r328... */
 };
+#ifdef CONFIG_AML_BOARD
+#define WCN_FW_NAME	"uwe5621ds/wcnmodem.bin"
+#else
 #define WCN_FW_NAME	"wcnmodem.bin"
+#endif
 #define GNSS_FW_NAME	"gnssmodem.bin"
 
 #ifndef REG_PMU_APB_XTL_WAIT_CNT0
