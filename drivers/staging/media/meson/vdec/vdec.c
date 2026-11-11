@@ -41,7 +41,7 @@ static u32 get_output_size(const struct amvdec_codec_ops *codec_ops,
 		return ALIGN(width, 64) *
 			ALIGN(height, codec_ops->canvas_height_align);
 
-	return ALIGN(width * height, SZ_64K);
+	return ALIGN(ALIGN(width, 32) * ALIGN(height, 32), SZ_64K);
 }
 
 u32 amvdec_get_output_size(struct amvdec_session *sess)
