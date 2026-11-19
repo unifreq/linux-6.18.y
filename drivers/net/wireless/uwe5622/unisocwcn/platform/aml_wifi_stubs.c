@@ -144,7 +144,7 @@ static struct mmc_host *aml_get_mmc0_host(void)
 	 * and never picks sd_emmc_b while it serves the SD card slot.
 	 */
 	static const char * const names[] = {
-		"ffe03000.mmc", "mmc@ffe03000", "ffe05000.mmc",
+		"ffe03000.mmc", "mmc@ffe03000", "ffe05000.mmc", "d0070000.mmc",
 	};
 	struct mmc_host *host;
 	unsigned int i;
