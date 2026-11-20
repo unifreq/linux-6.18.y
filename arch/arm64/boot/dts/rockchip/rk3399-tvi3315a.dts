@@ -328,7 +328,7 @@
 		interrupt-parent = <&gpio1>; // bsp
 		interrupts = <RK_PC5 IRQ_TYPE_LEVEL_LOW>; // bsp
 		#clock-cells = <1>;
-		clock-output-names = "xin32k", "rk808-clkout2";
+		clock-output-names = "rk808-clkout1", "rk808-clkout2";
 		pinctrl-names = "default";
 		pinctrl-0 = <&pmic_int_l>;
 		system-power-controller;
@@ -595,6 +595,10 @@
 	// pinctrl-0 = <&i2s_8ch_mclk_pin>, <&i2s1_2ch_bus>;
 	rockchip,capture-channels = <8>;
 	rockchip,playback-channels = <8>;
+	status = "okay";
+};
+
+&i2s2 {
 	status = "okay";
 };
 
