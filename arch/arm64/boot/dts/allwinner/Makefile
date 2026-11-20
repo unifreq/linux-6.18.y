@@ -50,6 +50,7 @@ dtb-$(CONFIG_ARCH_SUNXI) += sun50i-h616-bigtreetech-cb1-manta.dtb
 dtb-$(CONFIG_ARCH_SUNXI) += sun50i-h616-bigtreetech-pi.dtb
 dtb-$(CONFIG_ARCH_SUNXI) += sun50i-h616-orangepi-zero2.dtb
 dtb-$(CONFIG_ARCH_SUNXI) += sun50i-h616-x96-mate.dtb
+dtb-$(CONFIG_ARCH_SUNXI) += sun50i-h616-ydzy-box.dtb
 dtb-$(CONFIG_ARCH_SUNXI) += sun50i-h618-ai-douhe.dtb
 dtb-$(CONFIG_ARCH_SUNXI) += sun50i-h618-bt-100m.dtb
 dtb-$(CONFIG_ARCH_SUNXI) += sun50i-h618-bt-1000m.dtb

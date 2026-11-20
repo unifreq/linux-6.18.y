@@ -8,6 +8,7 @@
 #include <linux/clk.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
+#include <linux/of.h>
 #include <linux/phy.h>
 
 #define AC200_EPHY_ID			0x00441400
@@ -57,11 +58,29 @@ static int ac200_ephy_probe(struct phy_device *phydev)
 	return 0;
 }
 
+/*
+ * The AC200 and AC300 EPHYs report the same PHY ID (0x00441400). Make the
+ * AC200 driver decline a node that declares itself an AC300, so that the
+ * AC300 driver (which needs its own power-up/calibration sequence) gets to
+ * bind instead of losing the race on registration order.
+ */
+static int ac200_ephy_match_phy_device(struct phy_device *phydev,
+				       const struct phy_driver *phydrv)
+{
+	if (phydev->mdio.dev.of_node &&
+	    of_device_is_compatible(phydev->mdio.dev.of_node,
+				     "allwinner,sun50i-h618-ac300-ephy"))
+		return 0;
+
+	return phy_id_compare(phydev->phy_id, phydrv->phy_id, phydrv->phy_id_mask);
+}
+
 static struct phy_driver ac200_ephy_driver[] = {
 	{
 		.phy_id		= AC200_EPHY_ID,
 		.phy_id_mask	= AC200_EPHY_ID_MASK,
 		.name		= "Allwinner AC200 EPHY",
+		.match_phy_device = ac200_ephy_match_phy_device,
 		.soft_reset	= genphy_soft_reset,
 		.config_init	= ac200_ephy_config_init,
 		.probe		= ac200_ephy_probe,
