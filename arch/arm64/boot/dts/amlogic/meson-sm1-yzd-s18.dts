@@ -24,14 +24,22 @@
 		reg = <0x0 0x0 0x0 0xf5800000>;
 	};
 
-	leds {
-		compatible = "gpio-leds";
+	/*
+	 * The status LED sits on GPIOAO_11, which is multiplexed with PWM_AO_A.
+	 * Drive it through the PWM so its brightness can be adjusted at runtime
+	 * (0-255) via /sys/class/leds/blue:status/brightness. It starts on at
+	 * brightness 100; the LED core switches it off on shutdown.
+	 */
+	pwm-leds {
+		compatible = "pwm-leds";
 
 		led-blue {
 			color = <LED_COLOR_ID_BLUE>;
 			function = LED_FUNCTION_STATUS;
-			gpios = <&gpio_ao GPIOAO_11 GPIO_ACTIVE_HIGH>;
-			linux,default-trigger = "heartbeat";
+			pwms = <&pwm_AO_ab 0 1000000 0>;
+			max-brightness = <255>;
+			default-state = "on";
+			default-brightness = <100>;
 			panic-indicator;
 		};
 	};
@@ -61,6 +69,13 @@
 
 &ir {
 	linux,rc-map-name = "rc-yzd-s18";
+};
+
+/* PWM_AO_A drives the status LED (GPIOAO_11) */
+&pwm_AO_ab {
+	status = "okay";
+	pinctrl-0 = <&pwm_ao_a_pins>;
+	pinctrl-names = "default";
 };
 
 /* No 40-pin header */
