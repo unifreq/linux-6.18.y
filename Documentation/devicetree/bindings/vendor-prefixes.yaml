@@ -1859,6 +1859,8 @@ patternProperties:
     description: YADRO
   "^yamaha,.*":
     description: Yamaha Corporation
+  "^ydzy,.*":
+    description: YDZY (Yingdao Zhiyin) cloud print terminal
   "^yes-optoelectronics,.*":
     description: Yes Optoelectronics Co.,Ltd.
   "^yic,.*":
