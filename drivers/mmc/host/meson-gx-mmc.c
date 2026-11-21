@@ -333,12 +333,7 @@ static unsigned int meson_mmc_get_timeout_msecs(struct mmc_data *data)
 	return min_t(unsigned int, timeout, SD_EMMC_CMD_TIMEOUT_MAX);
 }
 
-/*
- * For a command without data the controller waits for the response and, for
- * R1b, for the busy signal to be released, within the same timeout. The core
- * tells us how long the card may legitimately stay busy in cmd->busy_timeout;
- * honour it (bounded by the field), otherwise fall back to the default.
- */
+/* For R1b the controller waits for busy to be released within this timeout. */
 static unsigned int meson_mmc_get_cmd_timeout_msecs(struct mmc_command *cmd)
 {
 	unsigned int timeout = cmd->busy_timeout;
@@ -346,10 +341,10 @@ static unsigned int meson_mmc_get_cmd_timeout_msecs(struct mmc_command *cmd)
 	if (!timeout)
 		return SD_EMMC_CMD_TIMEOUT;
 
-	timeout = roundup_pow_of_two(timeout);
+	timeout = clamp_t(unsigned int, timeout, SD_EMMC_CMD_TIMEOUT,
+			  SD_EMMC_CMD_TIMEOUT_MAX);
 
-	return clamp_t(unsigned int, timeout, SD_EMMC_CMD_TIMEOUT,
-		       SD_EMMC_CMD_TIMEOUT_MAX);
+	return roundup_pow_of_two(timeout);
 }
 
 static struct mmc_command *meson_mmc_get_next_command(struct mmc_command *cmd)
@@ -1477,8 +1472,8 @@ static int meson_mmc_card_busy(struct mmc_host *mmc)
 	regval = readl(host->regs + SD_EMMC_STATUS);
 	meson_mmc_bus_put(slot);
 
-	/* We are only interrested in lines 0 to 3, so mask the other ones */
-	return !(FIELD_GET(STATUS_DATI, regval) & 0xf);
+	/* The card signals busy on DAT0 alone. */
+	return !(FIELD_GET(STATUS_DATI, regval) & BIT(0));
 }
 
 static int __meson_mmc_voltage_switch(struct mmc_host *mmc,
