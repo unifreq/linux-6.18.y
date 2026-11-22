@@ -2674,6 +2674,45 @@ void sprdwl_report_scan_result(struct sprdwl_vif *vif, u16 chan, s16 rssi,
 	}
 }
 
+/*
+ * Marlin3E CP2 clears the address supplied by WIFI_CMD_NOTIFY_IP_ACQUIRED
+ * on every association and drops incoming broadcast frames until it is
+ * notified again. A static address normally produces only one NETDEV_UP
+ * event, so queue the address again after each successful association or
+ * roam. Keep the firmware command off the RX workqueue.
+ */
+static void sprdwl_renotify_ipv4(struct sprdwl_vif *vif)
+{
+	struct sprdwl_work *work;
+	struct in_ifaddr *ifa;
+	struct in_device *in_dev;
+	__be32 addr = 0;
+
+	rcu_read_lock();
+	in_dev = __in_dev_get_rcu(vif->ndev);
+	if (in_dev) {
+		ifa = rcu_dereference(in_dev->ifa_list);
+		if (ifa)
+			addr = ifa->ifa_address;
+	}
+	rcu_read_unlock();
+
+	if (!addr)
+		return;
+
+	work = sprdwl_alloc_work(SPRDWL_IPV4_ADDR_LEN);
+	if (!work) {
+		wl_ndev_log(L_ERR, vif->ndev,
+			    "%s failed to allocate IP notification work\n",
+			    __func__);
+		return;
+	}
+	work->vif = vif;
+	work->id = SPRDWL_WORK_NOTIFY_IP;
+	memcpy(work->data, &addr, sizeof(addr));
+	sprdwl_queue_work(vif->priv, work);
+}
+
 void sprdwl_report_connection(struct sprdwl_vif *vif,
 					struct sprdwl_connect_info *conn_info,
 					u8 status_code)
@@ -2934,6 +2973,9 @@ lookup_bss:
 	wl_ndev_log(L_DBG, vif->ndev, "%s %s to %s (%pM)\n", __func__,
 		    state == SPRDWL_CONNECTING ?
 			"connect" : "roam", vif->ssid, vif->bssid);
+	if (vif->wdev.iftype == NL80211_IFTYPE_STATION ||
+	    vif->wdev.iftype == NL80211_IFTYPE_P2P_CLIENT)
+		sprdwl_renotify_ipv4(vif);
 	return;
 err:
 	if (bss)

@@ -230,7 +230,7 @@ static void sdiohal_abort(void)
 
 	sdiohal_info("sdiohal_abort\n");
 
-#ifdef CONFIG_ARCH_SUNXI
+#ifdef CONFIG_AW_BOARD
 	sprdwcn_bus_set_carddump_status(true);
 	return;
 #endif
@@ -2434,6 +2434,8 @@ int sdiohal_init(void)
 	}
 	p_data->printlog_txchn = SDIO_CHANNEL_NUM;
 	p_data->printlog_rxchn = SDIO_CHANNEL_NUM;
+	init_completion(&p_data->scan_done);
+	init_completion(&p_data->remove_done);
 	/* card not ready */
 	atomic_set(&p_data->xmit_cnt, SDIOHAL_REMOVE_CARD_VAL);
 	sdiohal_data = p_data;
