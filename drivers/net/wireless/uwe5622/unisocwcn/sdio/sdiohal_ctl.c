@@ -753,10 +753,11 @@ static int sdiohal_test_int_init(unsigned char func_tag)
 {
 #ifdef CONFIG_WCN_PARSE_DTS
 	struct device_node *np;
-#endif
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 0)
+# if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 0)
 	struct gpio_desc *pub_gpio_desc = NULL;
-#else
+# endif
+#endif
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 18, 0)
 	unsigned int pub_gpio_num = 0;
 #endif
 	unsigned char reg_int_en = 0;
@@ -794,7 +795,12 @@ static int sdiohal_test_int_init(unsigned char func_tag)
 #endif
 #endif
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 0)
+#ifdef CONFIG_WCN_PARSE_DTS
 	/* GPIO already configured above */
+#else
+	sdiohal_err("public interrupt requires CONFIG_WCN_PARSE_DTS\n");
+	return -EINVAL;
+#endif
 #else
 	sdiohal_info("pub_gpio_num:%d\n", pub_gpio_num);
 	ret = gpio_request(pub_gpio_num, "sdiohal_int_gpio");
