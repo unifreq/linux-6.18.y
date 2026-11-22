@@ -93,7 +93,9 @@ static void sprdwl_do_work(struct work_struct *work)
 						     vif->mc_filter->mac_addr);
 			break;
 		case SPRDWL_WORK_NOTIFY_IP:
-			sprdwl_notify_ip(priv, vif->ctx_id, SPRDWL_IPV6,
+			sprdwl_notify_ip(priv, vif->ctx_id,
+					 sprdwl_work->len == SPRDWL_IPV4_ADDR_LEN ?
+					 SPRDWL_IPV4 : SPRDWL_IPV6,
 					 sprdwl_work->data);
 			break;
 		case SPRDWL_WORK_BA_MGMT:
