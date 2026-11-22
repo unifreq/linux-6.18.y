@@ -4,6 +4,7 @@
 #
 config RTL8189FS
 	tristate "Realtek 8189FS SDIO WiFi"
+	depends on CFG80211 && MMC
 	help
 	  Say Y here to include the Realtek RTL8189FS 802.11n SDIO
 	  wireless driver.  The chip has no mainline driver -- rtl8xxxu
