@@ -640,8 +640,6 @@ static int dw_hdmi_qp_rockchip_bind(struct device *dev, struct device *master,
 	if (ret)
 		return dev_err_probe(hdmi->dev, ret, "Failed to init encoder");
 
-	platform_set_drvdata(pdev, hdmi);
-
 	hdmi->hdmi = dw_hdmi_qp_bind(pdev, encoder, &plat_data);
 	if (IS_ERR(hdmi->hdmi))
 		return dev_err_probe(hdmi->dev, PTR_ERR(hdmi->hdmi),
@@ -655,7 +653,9 @@ static int dw_hdmi_qp_rockchip_bind(struct device *dev, struct device *master,
 	if (!drm_mode_create_hdmi_color_format_property(connector, supported_colorformats))
 		drm_connector_attach_color_format_property(connector);
 
-	return drm_connector_attach_encoder(connector, encoder);
+	platform_set_drvdata(pdev, hdmi);
+
+	return 0;
 }
 
 static void dw_hdmi_qp_rockchip_unbind(struct device *dev,
@@ -663,6 +663,8 @@ static void dw_hdmi_qp_rockchip_unbind(struct device *dev,
 				       void *data)
 {
 	struct rockchip_hdmi_qp *hdmi = dev_get_drvdata(dev);
+
+	dev_set_drvdata(dev, NULL);
 
 	cancel_delayed_work_sync(&hdmi->hpd_work);
 }
@@ -686,6 +688,11 @@ static int __maybe_unused dw_hdmi_qp_rockchip_suspend(struct device *dev)
 {
 	struct rockchip_hdmi_qp *hdmi = dev_get_drvdata(dev);
 
+	if (!hdmi)
+		return 0;
+
+	cancel_delayed_work_sync(&hdmi->hpd_work);
+
 	dw_hdmi_qp_suspend(dev, hdmi->hdmi);
 
 	return 0;
@@ -694,6 +701,9 @@ static int __maybe_unused dw_hdmi_qp_rockchip_suspend(struct device *dev)
 static int __maybe_unused dw_hdmi_qp_rockchip_resume(struct device *dev)
 {
 	struct rockchip_hdmi_qp *hdmi = dev_get_drvdata(dev);
+
+	if (!hdmi)
+		return 0;
 
 	hdmi->ctrl_ops->io_init(hdmi);
 

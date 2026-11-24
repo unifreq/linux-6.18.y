@@ -518,8 +518,6 @@ int rocket_job_init(struct rocket_core *core)
 	return 0;
 
 err_sched:
-	drm_sched_fini(&core->sched);
-
 	destroy_workqueue(core->reset.wq);
 	return ret;
 }

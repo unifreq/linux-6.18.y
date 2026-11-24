@@ -806,14 +806,11 @@ ieee80211_tx_h_rate_ctrl(struct ieee80211_tx_data *tx)
 		tx->rate = info->control.rates[0];
 	}
 
-	if (txrc.reported_rate.idx < 0)
+	if (txrc.reported_rate.idx < 0) {
 		txrc.reported_rate = tx->rate;
-
-	/* Null/QoS Null connection probes deliberately use a basic rate.
-	 * Keep the station's data bitrate from being replaced by these
-	 * non-payload frames, including probes sent after a scan.
-	 */
-	if (tx->sta && (encap || ieee80211_is_data_present(hdr->frame_control)))
+		if (tx->sta && ieee80211_is_tx_data(tx->skb))
+			tx->sta->deflink.tx_stats.last_rate = txrc.reported_rate;
+	} else if (tx->sta)
 		tx->sta->deflink.tx_stats.last_rate = txrc.reported_rate;
 
 	if (ratetbl)
@@ -1680,8 +1677,7 @@ int ieee80211_txq_setup_flows(struct ieee80211_local *local)
 	local->cparams.target = MS2TIME(20);
 	local->cparams.ecn = true;
 
-	local->cvars = kvcalloc(fq->flows_cnt, sizeof(local->cvars[0]),
-				GFP_KERNEL);
+	local->cvars = kvzalloc_objs(local->cvars[0], fq->flows_cnt);
 	if (!local->cvars) {
 		spin_lock_bh(&fq->lock);
 		fq_reset(fq, fq_skb_free_func);
@@ -5851,8 +5847,7 @@ ieee80211_beacon_get_ap_ema_list(struct ieee80211_hw *hw,
 	if (!beacon->mbssid_ies || !beacon->mbssid_ies->cnt)
 		return NULL;
 
-	ema = kzalloc(struct_size(ema, bcn, beacon->mbssid_ies->cnt),
-		      GFP_ATOMIC);
+	ema = kzalloc_flex(*ema, bcn, beacon->mbssid_ies->cnt, GFP_ATOMIC);
 	if (!ema)
 		return NULL;
 

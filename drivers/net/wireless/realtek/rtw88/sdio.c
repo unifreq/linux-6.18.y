@@ -827,6 +827,7 @@ static int rtw_sdio_write_to_port(struct rtw_dev *rtwdev, struct sk_buff *skb,
 				  size_t write_size)
 {
 	struct rtw_sdio *rtwsdio = (struct rtw_sdio *)rtwdev->priv;
+	size_t pad_size;
 	bool bus_claim;
 	int ret;
 
